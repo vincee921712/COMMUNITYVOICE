@@ -87,3 +87,4 @@ This workspace is coordinated by an 8-agent specialized architecture:
 
 Complies with the **Data Privacy Act of 2012 (Republic Act No. 10173)** of the Philippines.  
 Academic project for the College of Technology, University of San Agustin.
+
