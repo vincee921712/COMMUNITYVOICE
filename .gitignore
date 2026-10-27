@@ -1,0 +1,36 @@
+# Node dependencies
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Next.js build output
+.next/
+out/
+build/
+dist/
+
+# Local Environment variables
+.env*.local
+.env
+ai-service/.env
+
+# Python AI Service
+ai-service/__pycache__/
+ai-service/*.py[cod]
+ai-service/*$py.class
+ai-service/.venv/
+ai-service/env/
+ai-service/venv/
+
+# IDE and OS files
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+.vscode/
+.idea/
+
+# TypeScript cache
+*.tsbuildinfo
+next-env.d.ts
