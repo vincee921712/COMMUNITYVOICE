@@ -43,3 +43,4 @@ CREATE POLICY "Public can view certification requests" ON public.certification_r
 -- 5. Allow Public to View Barangay Projects
 DROP POLICY IF EXISTS "Public can view projects" ON public.barangay_projects;
 CREATE POLICY "Public can view projects" ON public.barangay_projects FOR SELECT USING (true);
+
