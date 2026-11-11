@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { 
   Building2, 
   MapPin, 
@@ -12,12 +12,17 @@ import {
   LayoutDashboard, 
   Bell, 
   Menu,
-  X
+  X,
+  LogIn,
+  LogOut,
+  User
 } from 'lucide-react';
+import { useAuth } from '@/context/AuthContext';
 
 export default function Navbar() {
   const pathname = usePathname();
-  const [activeRole, setActiveRole] = useState<'resident' | 'staff' | 'official'>('resident');
+  const router = useRouter();
+  const { user, logout } = useAuth();
   const [showNotifications, setShowNotifications] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
@@ -43,17 +48,40 @@ export default function Navbar() {
           <span className="inline-block w-2 h-2 rounded-full bg-emerald-400 shrink-0"></span>
           <span className="truncate">Republic of the Philippines • City of Iloilo • <strong>Barangay Hibao-an Sur</strong></span>
         </div>
-        <div className="flex items-center space-x-2 text-[11px] shrink-0 ml-2">
-          <span className="text-slate-400 hidden sm:inline">Active View:</span>
-          <select 
-            value={activeRole} 
-            onChange={(e) => setActiveRole(e.target.value as any)}
-            className="bg-slate-800 text-white rounded px-2 py-0.5 border border-slate-700 text-xs focus:outline-none cursor-pointer"
-          >
-            <option value="resident">Resident View</option>
-            <option value="staff">Barangay Staff (Secretary/Clerk)</option>
-            <option value="official">Barangay Official (Captain/Kagawad)</option>
-          </select>
+
+        {/* User Identity / Role pill */}
+        <div className="flex items-center space-x-3 text-[11px] shrink-0 ml-2">
+          {user ? (
+            <div className="flex items-center space-x-2">
+              <span className="text-slate-400 hidden sm:inline">Signed in as:</span>
+              <span className={`px-2 py-0.5 rounded font-semibold text-[10px] uppercase ${
+                user.role === 'official' ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40' :
+                user.role === 'staff' ? 'bg-blue-500/20 text-blue-300 border border-blue-500/40' :
+                'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+              }`}>
+                {user.role} ({user.full_name})
+              </span>
+              <button
+                onClick={async () => {
+                  await logout();
+                  router.push('/login');
+                }}
+                className="text-slate-400 hover:text-white flex items-center gap-1 pl-1"
+                title="Sign Out"
+              >
+                <LogOut className="w-3 h-3" />
+                <span className="hidden md:inline">Sign Out</span>
+              </button>
+            </div>
+          ) : (
+            <Link
+              href="/login"
+              className="text-blue-300 hover:text-white font-medium flex items-center gap-1"
+            >
+              <LogIn className="w-3 h-3" />
+              <span>Sign In</span>
+            </Link>
+          )}
         </div>
       </div>
 
@@ -127,7 +155,7 @@ export default function Navbar() {
             )}
           </div>
 
-          {/* Primary Action Button (Single line, no wrapping) */}
+          {/* Primary Action Button */}
           <Link
             href="/report"
             className="inline-flex items-center space-x-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs sm:text-sm font-medium px-3 sm:px-4 py-2 rounded-lg shadow-sm transition-all shadow-blue-500/20 whitespace-nowrap shrink-0"
