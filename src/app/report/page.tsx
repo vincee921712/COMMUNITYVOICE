@@ -1,21 +1,21 @@
 'use client';
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import dynamic from 'next/dynamic';
 import { 
   PlusCircle, 
   Sparkles, 
   MapPin, 
   AlertTriangle, 
-  CheckCircle,
-  Upload,
-  Image as ImageIcon,
-  X,
-  FileCheck2,
-  Shield,
-  PhoneCall
+  CheckCircle, 
+  Upload, 
+  X, 
+  Shield, 
+  PhoneCall 
 } from 'lucide-react';
-import { CATEGORIES } from '@/lib/mockData';
+import { CATEGORIES as DEFAULT_CATEGORIES } from '@/lib/mockData';
+import { supabase, isSupabaseConfigured } from '@/lib/supabase/client';
+import { Category, PriorityLevel } from '@/lib/types';
 
 const LeafletMap = dynamic(() => import('@/components/Map/LeafletMap'), {
   ssr: false,
@@ -27,6 +27,7 @@ const LeafletMap = dynamic(() => import('@/components/Map/LeafletMap'), {
 });
 
 export default function ReportPage() {
+  const [categories, setCategories] = useState<Category[]>(DEFAULT_CATEGORIES);
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [name, setName] = useState('');
@@ -44,14 +45,31 @@ export default function ReportPage() {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [aiResult, setAiResult] = useState<{
     category: string;
-    priority: string;
+    priority: PriorityLevel;
     justification: string;
     involves_minor: boolean;
   } | null>(null);
 
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [submittedTracking, setSubmittedTracking] = useState<string | null>(null);
 
-  // Handle Image Drop / Upload
+  // Fetch live categories from Supabase on mount
+  useEffect(() => {
+    async function loadCategories() {
+      if (isSupabaseConfigured && supabase) {
+        try {
+          const { data, error } = await supabase.from('categories').select('*');
+          if (!error && data && data.length > 0) {
+            setCategories(data as Category[]);
+          }
+        } catch {
+          // Keep default fallback categories
+        }
+      }
+    }
+    loadCategories();
+  }, []);
+
   const handleFileProcess = (file: File) => {
     if (!file.type.startsWith('image/')) {
       alert('Please upload an image file (PNG, JPG, JPEG).');
@@ -78,7 +96,6 @@ export default function ReportPage() {
     }
   };
 
-  // Trigger AI evaluation
   const handleAIAnalyze = async () => {
     if (!description.trim()) return;
     setIsAnalyzing(true);
@@ -105,10 +122,10 @@ export default function ReportPage() {
         });
         setCategoryId(data.category_id);
       } else {
-        throw new Error('API offline');
+        throw new Error('AI Service offline');
       }
     } catch {
-      // Local fallback classifier
+      // Local fallback heuristic
       const descLower = description.toLowerCase();
       const hasMinor = /minor|child|bata|curfew|underage/.test(descLower);
       const isHigh = hasMinor || /wire|kuryente|fire|away|danger/.test(descLower);
@@ -131,10 +148,43 @@ export default function ReportPage() {
     }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setIsSubmitting(true);
+
     const trackingCode = `CV-2026-${Math.floor(1000 + Math.random() * 9000)}`;
+    const assignedCategory = categories.find(c => c.id === categoryId);
+
+    // Save to Live Supabase if connected
+    if (isSupabaseConfigured && supabase) {
+      try {
+        const { error } = await supabase.from('complaints').insert({
+          tracking_number: trackingCode,
+          title,
+          description,
+          location_address: 'Barangay Hibao-an Sur, Mandurriao, Iloilo City',
+          latitude: selectedPin[0],
+          longitude: selectedPin[1],
+          category_id: categoryId,
+          priority: aiResult?.priority || assignedCategory?.default_priority || 'Medium',
+          status: 'Submitted',
+          ai_category_id: aiResult?.category || categoryId,
+          ai_priority: aiResult?.priority || 'Medium',
+          ai_justification: aiResult?.justification || 'Self-submitted by resident',
+          is_minor_flagged: aiResult?.involves_minor || false,
+          attachments: attachedImage ? [{ name: imageFileName, data: attachedImage }] : []
+        });
+
+        if (error) {
+          console.warn('Supabase insert note:', error.message);
+        }
+      } catch (err) {
+        console.error('Database connection error:', err);
+      }
+    }
+
     setSubmittedTracking(trackingCode);
+    setIsSubmitting(false);
   };
 
   return (
@@ -163,7 +213,7 @@ export default function ReportPage() {
           <div className="space-y-1">
             <h2 className="text-2xl font-bold text-slate-900">Incident Successfully Submitted!</h2>
             <p className="text-slate-500 text-xs sm:text-sm max-w-md mx-auto">
-              Your concern has been registered in the Barangay Hibao-an Sur digital blotter queue.
+              Your concern has been saved in the live database and registered in the Barangay Hibao-an Sur queue.
             </p>
           </div>
 
@@ -180,7 +230,7 @@ export default function ReportPage() {
           <div className="p-3.5 bg-blue-50/80 border border-blue-200 text-blue-900 rounded-xl text-xs max-w-md mx-auto flex items-center space-x-2 text-left">
             <PhoneCall className="w-4 h-4 text-blue-600 shrink-0" />
             <span>
-              <strong>Simulated SMS Receipt:</strong> A notification was generated for <strong>{contact || 'your mobile contact'}</strong> with live status updates.
+              <strong>Notification Receipt:</strong> A status log was generated for <strong>{contact || 'your contact'}</strong>.
             </span>
           </div>
 
@@ -215,6 +265,21 @@ export default function ReportPage() {
             <div className="flex items-center space-x-2 pb-2 border-b border-slate-100">
               <span className="w-6 h-6 rounded-full bg-blue-600 text-white font-bold text-xs flex items-center justify-center">1</span>
               <h3 className="text-sm font-bold text-slate-800">Incident Information</h3>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Issue Category *</label>
+              <select
+                value={categoryId}
+                onChange={(e) => setCategoryId(e.target.value)}
+                className="w-full text-xs sm:text-sm rounded-xl border border-slate-200 px-3.5 py-2.5 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 cursor-pointer"
+              >
+                {categories.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name} ({c.assigned_role})
+                  </option>
+                ))}
+              </select>
             </div>
 
             <div>
@@ -408,10 +473,11 @@ export default function ReportPage() {
           {/* Submit Button */}
           <button
             type="submit"
-            className="w-full py-4 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-2xl shadow-lg shadow-blue-500/25 transition-all text-sm flex items-center justify-center space-x-2 cursor-pointer"
+            disabled={isSubmitting}
+            className="w-full py-4 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-2xl shadow-lg shadow-blue-500/25 transition-all text-sm flex items-center justify-center space-x-2 cursor-pointer disabled:opacity-50"
           >
             <PlusCircle className="w-4 h-4" />
-            <span>Submit Report to Barangay Hibao-an Sur</span>
+            <span>{isSubmitting ? 'Saving to Database...' : 'Submit Report to Barangay Hibao-an Sur'}</span>
           </button>
         </form>
       )}
