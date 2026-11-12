@@ -20,7 +20,7 @@ export default function RegisterPage() {
     e.preventDefault();
     setIsLoading(true);
     try {
-      await register(fullName, email, 'resident', phone);
+      await register(fullName, email, 'resident', phone, password);
       router.push('/');
     } finally {
       setIsLoading(false);

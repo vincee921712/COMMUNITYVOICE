@@ -19,7 +19,7 @@ export default function LoginPage() {
     e.preventDefault();
     setIsLoading(true);
     try {
-      await login(email, role);
+      await login(email, password, role);
       if (role === 'staff' || role === 'official' || role === 'admin') {
         router.push('/admin/dashboard');
       } else {
@@ -69,9 +69,9 @@ export default function LoginPage() {
             </button>
             <button
               type="button"
-              onClick={() => setPreset('staff@hibaoan.gov.ph', 'staff')}
+              onClick={() => setPreset('secretary@hibaoan.gov.ph', 'staff')}
               className={`p-2 rounded-xl border text-center transition-all ${
-                role === 'staff' && email === 'staff@hibaoan.gov.ph'
+                role === 'staff' && (email === 'secretary@hibaoan.gov.ph' || email === 'staff@hibaoan.gov.ph')
                   ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
                   : 'bg-white text-slate-700 border-slate-200 hover:border-slate-300'
               }`}
