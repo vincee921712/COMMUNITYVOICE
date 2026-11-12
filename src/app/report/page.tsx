@@ -155,7 +155,37 @@ export default function ReportPage() {
     const trackingCode = `CV-2026-${Math.floor(1000 + Math.random() * 9000)}`;
     const assignedCategory = categories.find(c => c.id === categoryId);
 
-    // Save to Live Supabase if connected
+    // 1. Prepare complaint object
+    const newComplaintRecord = {
+      id: `cmp-${Date.now()}`,
+      tracking_number: trackingCode,
+      title,
+      description,
+      location_address: 'Barangay Hibao-an Sur, Mandurriao, Iloilo City',
+      latitude: selectedPin[0],
+      longitude: selectedPin[1],
+      category_id: categoryId,
+      priority: aiResult?.priority || assignedCategory?.default_priority || 'Medium',
+      status: 'Submitted' as const,
+      ai_category_id: aiResult?.category || categoryId,
+      ai_priority: aiResult?.priority || 'Medium',
+      ai_justification: aiResult?.justification || 'Self-submitted by resident',
+      is_minor_flagged: aiResult?.involves_minor || false,
+      attachments: attachedImage ? [{ name: imageFileName || 'evidence.jpg', data: attachedImage }] : [],
+      created_at: new Date().toISOString()
+    };
+
+    // 2. Always persist locally in localStorage so Track, Map & Admin reflect immediately
+    try {
+      const stored = localStorage.getItem('cv_custom_complaints');
+      const list = stored ? JSON.parse(stored) : [];
+      list.unshift(newComplaintRecord);
+      localStorage.setItem('cv_custom_complaints', JSON.stringify(list));
+    } catch (e) {
+      console.warn('Local storage write note:', e);
+    }
+
+    // 3. Save to Live Supabase if connected
     if (isSupabaseConfigured && supabase) {
       try {
         const { error } = await supabase.from('complaints').insert({

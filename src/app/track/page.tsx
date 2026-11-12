@@ -3,30 +3,77 @@
 import React, { useState } from 'react';
 import { Search, Clock, CheckCircle2, AlertCircle, Shield, ArrowRight } from 'lucide-react';
 import { INITIAL_COMPLAINTS, INITIAL_CERTIFICATES } from '@/lib/mockData';
+import { supabase, isSupabaseConfigured } from '@/lib/supabase/client';
 
 export default function TrackPage() {
   const [query, setQuery] = useState('CV-2026-001');
   const [result, setResult] = useState<any>(INITIAL_COMPLAINTS[0]);
+  const [isSearching, setIsSearching] = useState(false);
 
-  const handleSearch = (e: React.FormEvent) => {
+  const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
     const cleanQuery = query.trim().toUpperCase();
+    setIsSearching(true);
 
-    // Check complaints
-    const foundComplaint = INITIAL_COMPLAINTS.find(c => c.tracking_number.toUpperCase() === cleanQuery);
-    if (foundComplaint) {
-      setResult({ type: 'complaint', ...foundComplaint });
-      return;
+    try {
+      // 1. Check custom complaints saved in localStorage
+      let localComplaints: any[] = [];
+      try {
+        const stored = localStorage.getItem('cv_custom_complaints');
+        if (stored) localComplaints = JSON.parse(stored);
+      } catch (err) {
+        // ignore
+      }
+
+      const foundLocal = localComplaints.find(c => c.tracking_number?.toUpperCase() === cleanQuery);
+      if (foundLocal) {
+        setResult({ type: 'complaint', ...foundLocal });
+        return;
+      }
+
+      // 2. Check Supabase live complaints
+      if (isSupabaseConfigured && supabase) {
+        const { data: dbComplaint } = await supabase
+          .from('complaints')
+          .select('*')
+          .ilike('tracking_number', cleanQuery)
+          .maybeSingle();
+
+        if (dbComplaint) {
+          setResult({ type: 'complaint', ...dbComplaint });
+          return;
+        }
+
+        const { data: dbCert } = await supabase
+          .from('certification_requests')
+          .select('*')
+          .ilike('tracking_number', cleanQuery)
+          .maybeSingle();
+
+        if (dbCert) {
+          setResult({ type: 'certificate', ...dbCert });
+          return;
+        }
+      }
+
+      // 3. Check demo/mock complaints
+      const foundComplaint = INITIAL_COMPLAINTS.find(c => c.tracking_number.toUpperCase() === cleanQuery);
+      if (foundComplaint) {
+        setResult({ type: 'complaint', ...foundComplaint });
+        return;
+      }
+
+      // 4. Check demo/mock certificates
+      const foundCert = INITIAL_CERTIFICATES.find(c => c.tracking_number.toUpperCase() === cleanQuery);
+      if (foundCert) {
+        setResult({ type: 'certificate', ...foundCert });
+        return;
+      }
+
+      setResult(null);
+    } finally {
+      setIsSearching(false);
     }
-
-    // Check certificates
-    const foundCert = INITIAL_CERTIFICATES.find(c => c.tracking_number.toUpperCase() === cleanQuery);
-    if (foundCert) {
-      setResult({ type: 'certificate', ...foundCert });
-      return;
-    }
-
-    setResult(null);
   };
 
   const steps = ['Submitted', 'Under Review', 'Assigned', 'In Progress', 'Resolved', 'Closed'];

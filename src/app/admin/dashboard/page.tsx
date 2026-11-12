@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   CheckCircle, 
   XCircle, 
@@ -23,12 +23,55 @@ import {
   CATEGORIES 
 } from '@/lib/mockData';
 import { Complaint, CertificateRequest } from '@/lib/types';
+import { supabase, isSupabaseConfigured } from '@/lib/supabase/client';
 
 export default function AdminDashboardPage() {
   const [activeTab, setActiveTab] = useState<'complaints' | 'blotter' | 'certificates' | 'tanod'>('complaints');
   const [complaints, setComplaints] = useState<Complaint[]>(INITIAL_COMPLAINTS);
   const [certificates, setCertificates] = useState<CertificateRequest[]>(INITIAL_CERTIFICATES);
   const [successBanner, setSuccessBanner] = useState<string | null>(null);
+
+  // Load complaints from localStorage and Supabase
+  useEffect(() => {
+    async function fetchComplaints() {
+      let combined: Complaint[] = [...INITIAL_COMPLAINTS];
+
+      // 1. Read from localStorage custom complaints
+      try {
+        const stored = localStorage.getItem('cv_custom_complaints');
+        if (stored) {
+          const locals: Complaint[] = JSON.parse(stored);
+          // Prepend local complaints
+          combined = [...locals, ...combined];
+        }
+      } catch (e) {
+        console.warn('Could not read local complaints', e);
+      }
+
+      // 2. Read from Supabase if connected
+      if (isSupabaseConfigured && supabase) {
+        try {
+          const { data, error } = await supabase
+            .from('complaints')
+            .select('*')
+            .order('created_at', { ascending: false });
+
+          if (!error && data && data.length > 0) {
+            // Deduplicate by tracking_number
+            const existingTracking = new Set(data.map(d => d.tracking_number));
+            const filteredCombined = combined.filter(c => !existingTracking.has(c.tracking_number));
+            combined = [...(data as Complaint[]), ...filteredCombined];
+          }
+        } catch (e) {
+          console.warn('Could not fetch complaints from Supabase', e);
+        }
+      }
+
+      setComplaints(combined);
+    }
+
+    fetchComplaints();
+  }, []);
 
   // Human-in-the-Loop: Staff confirms AI recommendation
   const handleConfirmAI = (id: string) => {

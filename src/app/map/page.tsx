@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import dynamic from 'next/dynamic';
 import { 
   MapPin, 
@@ -14,6 +14,8 @@ import {
   AlertTriangle
 } from 'lucide-react';
 import { INITIAL_COMPLAINTS, INITIAL_PROJECTS, CATEGORIES } from '@/lib/mockData';
+import { Complaint } from '@/lib/types';
+import { supabase, isSupabaseConfigured } from '@/lib/supabase/client';
 
 const LeafletMap = dynamic(() => import('@/components/Map/LeafletMap'), {
   ssr: false,
@@ -25,12 +27,46 @@ const LeafletMap = dynamic(() => import('@/components/Map/LeafletMap'), {
 });
 
 export default function MapPage() {
+  const [complaints, setComplaints] = useState<Complaint[]>(INITIAL_COMPLAINTS);
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [selectedPriority, setSelectedPriority] = useState<string>('all');
   const [showProjects, setShowProjects] = useState<boolean>(true);
   const [layerMode, setLayerMode] = useState<'all' | 'markers' | 'heatmap'>('all');
   const [mapCenter, setMapCenter] = useState<[number, number]>([10.7314, 122.5228]);
   const [mapZoom, setMapZoom] = useState<number>(15);
+
+  useEffect(() => {
+    async function loadAllComplaints() {
+      let combined: Complaint[] = [...INITIAL_COMPLAINTS];
+
+      try {
+        const stored = localStorage.getItem('cv_custom_complaints');
+        if (stored) {
+          const locals: Complaint[] = JSON.parse(stored);
+          combined = [...locals, ...combined];
+        }
+      } catch (e) {
+        console.warn('Could not read local complaints', e);
+      }
+
+      if (isSupabaseConfigured && supabase) {
+        try {
+          const { data, error } = await supabase.from('complaints').select('*');
+          if (!error && data && data.length > 0) {
+            const existingTracking = new Set(data.map(d => d.tracking_number));
+            const filteredCombined = combined.filter(c => !existingTracking.has(c.tracking_number));
+            combined = [...(data as Complaint[]), ...filteredCombined];
+          }
+        } catch (e) {
+          console.warn('Could not fetch complaints from Supabase', e);
+        }
+      }
+
+      setComplaints(combined);
+    }
+
+    loadAllComplaints();
+  }, []);
 
   // Quick jump zones in Barangay Hibao-an Sur
   const quickZones = [
@@ -42,7 +78,7 @@ export default function MapPage() {
   ];
 
   // Filter complaints
-  const filteredComplaints = INITIAL_COMPLAINTS.filter((c) => {
+  const filteredComplaints = complaints.filter((c) => {
     if (selectedCategory !== 'all' && c.category_id !== selectedCategory) return false;
     if (selectedPriority !== 'all' && c.priority !== selectedPriority) return false;
     return true;
