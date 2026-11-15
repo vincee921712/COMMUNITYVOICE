@@ -44,3 +44,14 @@ CREATE POLICY "Public can view certification requests" ON public.certification_r
 DROP POLICY IF EXISTS "Public can view projects" ON public.barangay_projects;
 CREATE POLICY "Public can view projects" ON public.barangay_projects FOR SELECT USING (true);
 
+-- 6. Allow Staff/Officials to Manage Blotter Records
+ALTER TABLE public.blotter_records ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Allow staff to view blotter" ON public.blotter_records;
+CREATE POLICY "Allow staff to view blotter" ON public.blotter_records FOR SELECT USING (true);
+
+DROP POLICY IF EXISTS "Allow staff to insert blotter" ON public.blotter_records;
+CREATE POLICY "Allow staff to insert blotter" ON public.blotter_records FOR INSERT WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow staff to update blotter" ON public.blotter_records;
+CREATE POLICY "Allow staff to update blotter" ON public.blotter_records FOR UPDATE USING (true);
+

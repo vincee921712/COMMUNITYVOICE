@@ -22,14 +22,25 @@ import {
   INITIAL_TANOD_SCHEDULE,
   CATEGORIES 
 } from '@/lib/mockData';
-import { Complaint, CertificateRequest } from '@/lib/types';
+import { Complaint, CertificateRequest, BlotterRecord } from '@/lib/types';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase/client';
 
 export default function AdminDashboardPage() {
   const [activeTab, setActiveTab] = useState<'complaints' | 'blotter' | 'certificates' | 'tanod'>('complaints');
   const [complaints, setComplaints] = useState<Complaint[]>(INITIAL_COMPLAINTS);
   const [certificates, setCertificates] = useState<CertificateRequest[]>(INITIAL_CERTIFICATES);
+  const [blotterRecords, setBlotterRecords] = useState<BlotterRecord[]>(INITIAL_BLOTTER);
   const [successBanner, setSuccessBanner] = useState<string | null>(null);
+
+  // Walk-in Blotter Entry Form State
+  const [showBlotterForm, setShowBlotterForm] = useState(false);
+  const [incidentType, setIncidentType] = useState('Neighborhood Dispute');
+  const [incidentLocation, setIncidentLocation] = useState('Zone 1, Hibao-an Sur');
+  const [complainantName, setComplainantName] = useState('');
+  const [respondentName, setRespondentName] = useState('');
+  const [assignedPersonnel, setAssignedPersonnel] = useState('Kagawad on Peace & Order');
+  const [narrative, setNarrative] = useState('');
+  const [isSubmittingBlotter, setIsSubmittingBlotter] = useState(false);
 
   // Load complaints from localStorage and Supabase
   useEffect(() => {
@@ -112,6 +123,103 @@ export default function AdminDashboardPage() {
 
     fetchCertificates();
   }, []);
+
+  // Load blotter records from localStorage and Supabase
+  useEffect(() => {
+    async function fetchBlotter() {
+      let combined: BlotterRecord[] = [...INITIAL_BLOTTER];
+
+      try {
+        const stored = localStorage.getItem('cv_custom_blotter');
+        if (stored) {
+          const locals: BlotterRecord[] = JSON.parse(stored);
+          combined = [...locals, ...combined];
+        }
+      } catch (err) {
+        console.warn('Could not read local blotter:', err);
+      }
+
+      if (isSupabaseConfigured && supabase) {
+        try {
+          const { data, error } = await supabase
+            .from('blotter_records')
+            .select('*')
+            .order('incident_date', { ascending: false });
+
+          if (!error && data && data.length > 0) {
+            const existingEntries = new Set(data.map(d => d.blotter_entry_number));
+            const filteredCombined = combined.filter(b => !existingEntries.has(b.blotter_entry_number));
+            combined = [...(data as BlotterRecord[]), ...filteredCombined];
+          }
+        } catch (err) {
+          console.warn('Could not fetch blotter records from Supabase:', err);
+        }
+      }
+
+      setBlotterRecords(combined);
+    }
+
+    fetchBlotter();
+  }, []);
+
+  // Handle Walk-in Blotter Submission
+  const handleBlotterSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSubmittingBlotter(true);
+
+    const blotterEntryNumber = `BLOTTER-2026-${Math.floor(100 + blotterRecords.length + 1)}`;
+    const newRecord: BlotterRecord = {
+      id: `blot-${Date.now()}`,
+      blotter_entry_number: blotterEntryNumber,
+      incident_type: incidentType,
+      incident_date: new Date().toISOString(),
+      incident_location: incidentLocation,
+      complainant_name: complainantName,
+      respondent_name: respondentName || 'Unidentified / Unknown',
+      narrative,
+      assigned_personnel: assignedPersonnel,
+      status: 'Active',
+      created_at: new Date().toISOString()
+    };
+
+    // 1. Save to local storage
+    try {
+      const stored = localStorage.getItem('cv_custom_blotter');
+      const list = stored ? JSON.parse(stored) : [];
+      list.unshift(newRecord);
+      localStorage.setItem('cv_custom_blotter', JSON.stringify(list));
+    } catch (err) {
+      console.warn('Local storage write blotter error:', err);
+    }
+
+    // 2. Save to Supabase
+    if (isSupabaseConfigured && supabase) {
+      try {
+        await supabase.from('blotter_records').insert({
+          blotter_entry_number: blotterEntryNumber,
+          incident_type: incidentType,
+          incident_date: new Date().toISOString(),
+          incident_location: incidentLocation,
+          complainant_name: complainantName,
+          respondent_name: respondentName || 'Unidentified / Unknown',
+          narrative,
+          assigned_personnel: assignedPersonnel,
+          status: 'Active'
+        });
+      } catch (err) {
+        console.warn('Supabase blotter insert warning:', err);
+      }
+    }
+
+    setBlotterRecords([newRecord, ...blotterRecords]);
+    setSuccessBanner(`Blotter entry ${blotterEntryNumber} successfully logged into the Electronic Blotter Book.`);
+    setShowBlotterForm(false);
+    setComplainantName('');
+    setRespondentName('');
+    setNarrative('');
+    setIsSubmittingBlotter(false);
+    setTimeout(() => setSuccessBanner(null), 4000);
+  };
 
   // Human-in-the-Loop: Staff confirms AI recommendation
   const handleConfirmAI = async (id: string) => {
@@ -373,34 +481,161 @@ export default function AdminDashboardPage() {
 
       {/* TAB 2: ELECTRONIC BLOTTER */}
       {activeTab === 'blotter' && (
-        <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm space-y-4">
-          <div className="flex justify-between items-center pb-3 border-b border-slate-100">
+        <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm space-y-6">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-slate-100 gap-3">
             <div>
               <h3 className="font-bold text-slate-900 text-base">Electronic Blotter Logbook</h3>
-              <p className="text-xs text-slate-500">Official digital records replacing manual blotter books.</p>
+              <p className="text-xs text-slate-500">Official digital records for walk-in peace & order incidents (Replacing paper logbooks).</p>
             </div>
-            <span className="text-xs bg-slate-100 text-slate-700 px-2.5 py-1 rounded-lg font-mono">
-              RA 10173 Protected
-            </span>
+            <div className="flex items-center space-x-2">
+              <span className="text-[11px] bg-slate-100 text-slate-700 px-2.5 py-1 rounded-lg font-mono">
+                RA 10173 Protected
+              </span>
+              <button
+                type="button"
+                onClick={() => setShowBlotterForm(!showBlotterForm)}
+                className="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-semibold shadow-sm transition-all"
+              >
+                {showBlotterForm ? 'Cancel Entry' : '+ Encode Walk-in Blotter'}
+              </button>
+            </div>
           </div>
 
+          {/* New Walk-in Blotter Entry Form */}
+          {showBlotterForm && (
+            <form onSubmit={handleBlotterSubmit} className="p-5 bg-blue-50/50 border border-blue-200 rounded-2xl space-y-4 text-xs">
+              <div className="flex items-center justify-between border-b border-blue-200/60 pb-2">
+                <span className="font-bold text-blue-900 flex items-center gap-1.5">
+                  <BookOpen className="w-4 h-4 text-blue-600" />
+                  Encode Walk-in Incident / Citizen Dispute
+                </span>
+                <span className="text-[10px] text-blue-600 font-mono">Date: {new Date().toLocaleDateString()}</span>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">Incident Classification *</label>
+                  <select
+                    value={incidentType}
+                    onChange={(e) => setIncidentType(e.target.value)}
+                    className="w-full text-xs rounded-xl border border-slate-300 px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                  >
+                    <option value="Neighborhood Dispute">Neighborhood Dispute / Verbal Argument</option>
+                    <option value="Noise Disturbance">Noise Disturbance (Videoke / Nighttime)</option>
+                    <option value="Curfew Violation">Curfew Violation / Minors Out Late</option>
+                    <option value="Property Boundary Conflict">Property Boundary / Right of Way Conflict</option>
+                    <option value="Physical Altercation">Physical Altercation / Brawl</option>
+                    <option value="Pet / Animal Complaint">Pet / Stray Animal Disturbance</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">Incident Location (Purok/Zone) *</label>
+                  <select
+                    value={incidentLocation}
+                    onChange={(e) => setIncidentLocation(e.target.value)}
+                    className="w-full text-xs rounded-xl border border-slate-300 px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                  >
+                    <option value="Zone 1 (Purok Narra / Main Road)">Zone 1 (Purok Narra / Main Road)</option>
+                    <option value="Zone 2 (Drainage / Central Pathway)">Zone 2 (Drainage / Central Pathway)</option>
+                    <option value="Zone 3 (Near Covered Court)">Zone 3 (Near Covered Court)</option>
+                    <option value="Zone 4 (Outer Subdivision Boundary)">Zone 4 (Outer Subdivision Boundary)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">Complainant (Reporting Citizen) *</label>
+                  <input
+                    type="text"
+                    required
+                    value={complainantName}
+                    onChange={(e) => setComplainantName(e.target.value)}
+                    placeholder="Full Name (e.g. Maria Corazon)"
+                    className="w-full text-xs rounded-xl border border-slate-300 px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">Respondent (Party Complained Against)</label>
+                  <input
+                    type="text"
+                    value={respondentName}
+                    onChange={(e) => setRespondentName(e.target.value)}
+                    placeholder="Full Name or 'Unknown / Neighbor'"
+                    className="w-full text-xs rounded-xl border border-slate-300 px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">Assigned Barangay Official / Tanod *</label>
+                <select
+                  value={assignedPersonnel}
+                  onChange={(e) => setAssignedPersonnel(e.target.value)}
+                  className="w-full text-xs rounded-xl border border-slate-300 px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                >
+                  <option value="Kagawad on Peace & Order">Kagawad on Peace & Order</option>
+                  <option value="Barangay Tanod On-Duty Team Leader">Barangay Tanod On-Duty Team Leader</option>
+                  <option value="Lupong Tagapamayapa (Lupon Member)">Lupong Tagapamayapa (Lupon Conciliation)</option>
+                  <option value="Punong Barangay (Captain)">Punong Barangay (Captain Direct Intervention)</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">Narrative Summary & Statements *</label>
+                <textarea
+                  required
+                  rows={3}
+                  value={narrative}
+                  onChange={(e) => setNarrative(e.target.value)}
+                  placeholder="Summarize the incident facts, time of occurrence, witnesses, and immediate action taken by the desk officer."
+                  className="w-full text-xs rounded-xl border border-slate-300 p-3 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowBlotterForm(false)}
+                  className="px-4 py-2 bg-white border border-slate-300 text-slate-700 font-semibold rounded-xl text-xs hover:bg-slate-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmittingBlotter}
+                  className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl text-xs transition-all shadow-sm disabled:opacity-50"
+                >
+                  {isSubmittingBlotter ? 'Encoding Entry...' : 'Save Official Blotter Record'}
+                </button>
+              </div>
+            </form>
+          )}
+
+          {/* Blotter Records List */}
           <div className="divide-y divide-slate-100 text-xs">
-            {INITIAL_BLOTTER.map((b) => (
+            {blotterRecords.map((b) => (
               <div key={b.id} className="py-4 space-y-2">
                 <div className="flex justify-between items-start">
                   <div>
                     <span className="font-mono text-blue-600 font-bold block">{b.blotter_entry_number}</span>
                     <h4 className="font-bold text-slate-900 text-sm mt-0.5">{b.incident_type}</h4>
-                    <p className="text-slate-500">Location: {b.incident_location} • Date: {new Date(b.incident_date).toLocaleString()}</p>
+                    <p className="text-slate-500">
+                      Location: <strong>{b.incident_location}</strong> • Date: {new Date(b.incident_date).toLocaleString()}
+                    </p>
                   </div>
-                  <span className="px-2 py-0.5 rounded font-bold uppercase text-[10px] bg-slate-100 text-slate-700">
+                  <span className={`px-2 py-0.5 rounded font-bold uppercase text-[10px] ${
+                    b.status === 'Settled' ? 'bg-emerald-100 text-emerald-800' :
+                    b.status === 'Referred to SWDO' ? 'bg-amber-100 text-amber-800' :
+                    'bg-slate-100 text-slate-700'
+                  }`}>
                     {b.status}
                   </span>
                 </div>
                 <div className="p-3 bg-slate-50 rounded-xl text-slate-700">
                   <p><strong>Narrative:</strong> {b.narrative}</p>
                   <p className="mt-1 text-slate-500 text-[11px]">
-                    Complainant: <strong>{b.complainant_name}</strong> • Respondent: <strong>{b.respondent_name}</strong>
+                    Complainant: <strong>{b.complainant_name}</strong> • Respondent: <strong>{b.respondent_name}</strong> • Assigned: <strong className="text-blue-700">{b.assigned_personnel}</strong>
                   </p>
                 </div>
               </div>
