@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import dynamic from 'next/dynamic';
 import { 
   CheckCircle, 
   XCircle, 
@@ -13,7 +14,8 @@ import {
   Users, 
   Building,
   CheckCircle2,
-  RefreshCw
+  RefreshCw,
+  MapPin
 } from 'lucide-react';
 import { 
   INITIAL_COMPLAINTS, 
@@ -25,6 +27,15 @@ import {
 } from '@/lib/mockData';
 import { Complaint, CertificateRequest, BlotterRecord, BarangayProject } from '@/lib/types';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase/client';
+
+const LeafletMap = dynamic(() => import('@/components/Map/LeafletMap'), {
+  ssr: false,
+  loading: () => (
+    <div className="h-64 bg-slate-100 rounded-2xl flex items-center justify-center text-xs text-slate-400">
+      Loading Interactive Project Location Picker...
+    </div>
+  ),
+});
 
 export default function AdminDashboardPage() {
   const [activeTab, setActiveTab] = useState<'complaints' | 'blotter' | 'certificates' | 'projects' | 'tanod'>('complaints');
@@ -51,8 +62,9 @@ export default function AdminDashboardPage() {
   const [projectBudget, setProjectBudget] = useState(50000);
   const [projectStatus, setProjectStatus] = useState<'Proposed' | 'Ongoing' | 'Completed' | 'On Hold'>('Ongoing');
   const [projectZone, setProjectZone] = useState('Zone 1');
+  const [projectPin, setProjectPin] = useState<[number, number]>([10.7314, 122.5228]);
   const [projectStartDate, setProjectStartDate] = useState(new Date().toISOString().split('T')[0]);
-  const [projectTargetDate, setProjectTargetDate] = useState(new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]);
+  const [projectTargetDate, setProjectTargetDate] = useState(new Date(Date.now() + 30 * 24 * 60 * 1000).toISOString().split('T')[0]);
   const [isSubmittingProject, setIsSubmittingProject] = useState(false);
 
   // Load complaints from localStorage and Supabase
@@ -218,15 +230,6 @@ export default function AdminDashboardPage() {
     e.preventDefault();
     setIsSubmittingProject(true);
 
-    const zoneCoords: Record<string, [number, number]> = {
-      'Zone 1': [10.7328, 122.5220],
-      'Zone 2': [10.7318, 122.5210],
-      'Zone 3': [10.7325, 122.5235],
-      'Zone 4': [10.7305, 122.5242],
-    };
-
-    const coords = zoneCoords[projectZone] || [10.7314, 122.5228];
-
     const newProject: BarangayProject = {
       id: `proj-${Date.now()}`,
       title: projectTitle,
@@ -236,8 +239,8 @@ export default function AdminDashboardPage() {
       start_date: projectStartDate,
       target_completion_date: projectTargetDate,
       location_address: `${projectZone}, Hibao-an Sur, Mandurriao, Iloilo City`,
-      latitude: coords[0],
-      longitude: coords[1]
+      latitude: projectPin[0],
+      longitude: projectPin[1]
     };
 
     // 1. Save to localStorage
@@ -261,8 +264,8 @@ export default function AdminDashboardPage() {
           start_date: projectStartDate,
           target_completion_date: projectTargetDate,
           location_address: `${projectZone}, Hibao-an Sur, Mandurriao, Iloilo City`,
-          latitude: coords[0],
-          longitude: coords[1]
+          latitude: projectPin[0],
+          longitude: projectPin[1]
         });
       } catch (err) {
         console.warn('Supabase project insert warning:', err);
@@ -927,6 +930,32 @@ export default function AdminDashboardPage() {
                   placeholder="Provide scope details, contractor/committee in charge, and expected impact on residents."
                   className="w-full text-xs rounded-xl border border-slate-300 p-3 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                 />
+              </div>
+
+              {/* Exact Location Pin Picker */}
+              <div className="space-y-1.5 pt-1">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+                  <label className="font-semibold text-slate-700 flex items-center gap-1">
+                    <MapPin className="w-3.5 h-3.5 text-blue-600" />
+                    Exact Project Site on Barangay Map (Click to pinpoint)
+                  </label>
+                  <span className="text-[11px] font-mono text-slate-500 bg-white border border-slate-200 px-2 py-0.5 rounded-lg">
+                    Lat: {projectPin[0].toFixed(4)}, Lng: {projectPin[1].toFixed(4)}
+                  </span>
+                </div>
+                <div className="h-64 rounded-2xl overflow-hidden border border-slate-200 shadow-inner">
+                  <LeafletMap
+                    center={projectPin}
+                    zoom={16}
+                    interactiveSelect={true}
+                    selectedLocation={projectPin}
+                    onSelectLocation={(lat, lng) => setProjectPin([lat, lng])}
+                    projects={projects}
+                  />
+                </div>
+                <p className="text-[11px] text-slate-400">
+                  Tip: Click directly on the road or purok on the map where the project construction or maintenance will happen.
+                </p>
               </div>
 
               <div className="flex justify-end gap-2 pt-2">
