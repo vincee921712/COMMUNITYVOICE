@@ -73,54 +73,157 @@ export default function AdminDashboardPage() {
     fetchComplaints();
   }, []);
 
+  // Load certificates from localStorage and Supabase
+  useEffect(() => {
+    async function fetchCertificates() {
+      let combined: CertificateRequest[] = [...INITIAL_CERTIFICATES];
+
+      // 1. Read from localStorage
+      try {
+        const stored = localStorage.getItem('cv_custom_certificates');
+        if (stored) {
+          const locals: CertificateRequest[] = JSON.parse(stored);
+          combined = [...locals, ...combined];
+        }
+      } catch (err) {
+        console.warn('Could not read local certificates:', err);
+      }
+
+      // 2. Read from Supabase if connected
+      if (isSupabaseConfigured && supabase) {
+        try {
+          const { data, error } = await supabase
+            .from('certification_requests')
+            .select('*')
+            .order('created_at', { ascending: false });
+
+          if (!error && data && data.length > 0) {
+            const existingTracking = new Set(data.map(d => d.tracking_number));
+            const filteredCombined = combined.filter(c => !existingTracking.has(c.tracking_number));
+            combined = [...(data as CertificateRequest[]), ...filteredCombined];
+          }
+        } catch (err) {
+          console.warn('Could not fetch certificates from Supabase:', err);
+        }
+      }
+
+      setCertificates(combined);
+    }
+
+    fetchCertificates();
+  }, []);
+
   // Human-in-the-Loop: Staff confirms AI recommendation
-  const handleConfirmAI = (id: string) => {
-    setComplaints(complaints.map(c => {
+  const handleConfirmAI = async (id: string) => {
+    const matched = complaints.find(c => c.id === id);
+    const assignedRole = CATEGORIES.find(cat => cat.id === (matched?.ai_category_id || matched?.category_id))?.assigned_role || 'Barangay Staff';
+
+    const updated = complaints.map(c => {
       if (c.id === id) {
         return {
           ...c,
           is_staff_confirmed: true,
-          status: 'Assigned',
-          assigned_to: CATEGORIES.find(cat => cat.id === (c.ai_category_id || c.category_id))?.assigned_role || 'Barangay Staff'
+          status: 'Assigned' as const,
+          assigned_to: assignedRole
         };
       }
       return c;
-    }));
+    });
+
+    setComplaints(updated);
+
+    // Sync to local storage
+    try {
+      localStorage.setItem('cv_custom_complaints', JSON.stringify(updated));
+    } catch {}
+
+    // Sync to Supabase
+    if (isSupabaseConfigured && supabase && matched?.tracking_number) {
+      await supabase
+        .from('complaints')
+        .update({
+          status: 'Assigned',
+          is_staff_confirmed: true,
+          assigned_to: assignedRole
+        })
+        .eq('tracking_number', matched.tracking_number);
+    }
+
     setSuccessBanner(`Confirmed AI recommendation for ${id}. Routing assigned and resident notified via simulated SMS.`);
     setTimeout(() => setSuccessBanner(null), 4000);
   };
 
   // Human-in-the-Loop: Staff overrides
-  const handleOverride = (id: string, newPriority: 'High' | 'Medium' | 'Low') => {
-    setComplaints(complaints.map(c => {
+  const handleOverride = async (id: string, newPriority: 'High' | 'Medium' | 'Low') => {
+    const matched = complaints.find(c => c.id === id);
+    const updated = complaints.map(c => {
       if (c.id === id) {
         return {
           ...c,
           priority: newPriority,
           is_staff_confirmed: true,
-          status: 'Assigned'
+          status: 'Assigned' as const
         };
       }
       return c;
-    }));
+    });
+
+    setComplaints(updated);
+
+    try {
+      localStorage.setItem('cv_custom_complaints', JSON.stringify(updated));
+    } catch {}
+
+    if (isSupabaseConfigured && supabase && matched?.tracking_number) {
+      await supabase
+        .from('complaints')
+        .update({
+          priority: newPriority,
+          status: 'Assigned',
+          is_staff_confirmed: true
+        })
+        .eq('tracking_number', matched.tracking_number);
+    }
+
     setSuccessBanner(`Priority updated to ${newPriority} for ${id}.`);
     setTimeout(() => setSuccessBanner(null), 4000);
   };
 
   // Certificate Approval by Captain
-  const handleApproveCert = (id: string) => {
-    setCertificates(certificates.map(cert => {
+  const handleApproveCert = async (id: string) => {
+    const matched = certificates.find(cert => cert.id === id);
+    const updated = certificates.map(cert => {
       if (cert.id === id) {
         return {
           ...cert,
-          status: 'Ready for Pickup',
+          status: 'Ready for Pickup' as const,
           approved_by: 'Hon. Punong Barangay (Barangay Captain)',
           approved_at: new Date().toISOString(),
           remarks: 'Approved. Available at Window 1.'
         };
       }
       return cert;
-    }));
+    });
+
+    setCertificates(updated);
+
+    // Sync to local storage
+    try {
+      localStorage.setItem('cv_custom_certificates', JSON.stringify(updated));
+    } catch {}
+
+    // Sync to Supabase
+    if (isSupabaseConfigured && supabase && matched?.tracking_number) {
+      await supabase
+        .from('certification_requests')
+        .update({
+          status: 'Ready for Pickup',
+          approved_at: new Date().toISOString(),
+          remarks: 'Approved. Available at Window 1.'
+        })
+        .eq('tracking_number', matched.tracking_number);
+    }
+
     setSuccessBanner(`Certificate ${id} approved! Marked as 'Ready for Pickup' and SMS notification sent.`);
     setTimeout(() => setSuccessBanner(null), 4000);
   };

@@ -1,21 +1,73 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { FileText, CheckCircle2, Clock, AlertCircle, PlusCircle, Building } from 'lucide-react';
 import { INITIAL_CERTIFICATES } from '@/lib/mockData';
 import { CertificateRequest, CertificateType } from '@/lib/types';
+import { supabase, isSupabaseConfigured } from '@/lib/supabase/client';
+import { useAuth } from '@/context/AuthContext';
 
 export default function CertificatesPage() {
+  const { user } = useAuth();
   const [requests, setRequests] = useState<CertificateRequest[]>(INITIAL_CERTIFICATES);
   const [certType, setCertType] = useState<CertificateType>('certificate_of_indigency');
-  const [name, setName] = useState('');
+  const [name, setName] = useState(user?.full_name || '');
   const [purpose, setPurpose] = useState('');
-  const [contact, setContact] = useState('');
+  const [contact, setContact] = useState(user?.phone_number || '');
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [submittedId, setSubmittedId] = useState<string | null>(null);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  // Load existing certificates from localStorage and Supabase
+  useEffect(() => {
+    async function loadCertificates() {
+      let combined: CertificateRequest[] = [...INITIAL_CERTIFICATES];
+
+      // 1. Read from localStorage
+      try {
+        const stored = localStorage.getItem('cv_custom_certificates');
+        if (stored) {
+          const locals: CertificateRequest[] = JSON.parse(stored);
+          combined = [...locals, ...combined];
+        }
+      } catch (err) {
+        console.warn('Could not read local certificates:', err);
+      }
+
+      // 2. Read from Supabase if connected
+      if (isSupabaseConfigured && supabase) {
+        try {
+          const { data, error } = await supabase
+            .from('certification_requests')
+            .select('*')
+            .order('created_at', { ascending: false });
+
+          if (!error && data && data.length > 0) {
+            const existingTracking = new Set(data.map(d => d.tracking_number));
+            const filteredCombined = combined.filter(c => !existingTracking.has(c.tracking_number));
+            combined = [...(data as CertificateRequest[]), ...filteredCombined];
+          }
+        } catch (err) {
+          console.warn('Could not load certificates from Supabase:', err);
+        }
+      }
+
+      setRequests(combined);
+    }
+
+    loadCertificates();
+  }, []);
+
+  // Update applicant defaults when auth user changes
+  useEffect(() => {
+    if (user?.full_name && !name) setName(user.full_name);
+    if (user?.phone_number && !contact) setContact(user.phone_number);
+  }, [user]);
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const newId = `CERT-2026-00${requests.length + 1}`;
+    setIsSubmitting(true);
+
+    const newId = `CERT-2026-${Math.floor(1000 + Math.random() * 9000)}`;
     const newReq: CertificateRequest = {
       id: `cert-${Date.now()}`,
       tracking_number: newId,
@@ -27,11 +79,40 @@ export default function CertificatesPage() {
       created_at: new Date().toISOString()
     };
 
+    // 1. Save to local storage for instant availability
+    try {
+      const stored = localStorage.getItem('cv_custom_certificates');
+      const list = stored ? JSON.parse(stored) : [];
+      list.unshift(newReq);
+      localStorage.setItem('cv_custom_certificates', JSON.stringify(list));
+    } catch (err) {
+      console.warn('Local storage write error:', err);
+    }
+
+    // 2. Save to live Supabase database
+    if (isSupabaseConfigured && supabase) {
+      try {
+        const { error } = await supabase.from('certification_requests').insert({
+          tracking_number: newId,
+          resident_name: name,
+          certificate_type: certType,
+          purpose,
+          contact_number: contact,
+          status: 'Pending'
+        });
+
+        if (error) {
+          console.warn('Supabase certificate insert warning:', error.message);
+        }
+      } catch (err) {
+        console.error('Database connection error:', err);
+      }
+    }
+
     setRequests([newReq, ...requests]);
     setSubmittedId(newId);
-    setName('');
     setPurpose('');
-    setContact('');
+    setIsSubmitting(false);
   };
 
   const getDocName = (type: CertificateType) => {
