@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { 
   PlusCircle, 
@@ -16,6 +16,8 @@ import {
 } from 'lucide-react';
 import dynamic from 'next/dynamic';
 import { INITIAL_COMPLAINTS, INITIAL_PROJECTS } from '@/lib/mockData';
+import { Complaint, BarangayProject } from '@/lib/types';
+import { supabase, isSupabaseConfigured } from '@/lib/supabase/client';
 
 // Dynamically import Leaflet Map with no SSR
 const LeafletMap = dynamic(() => import('@/components/Map/LeafletMap'), {
@@ -28,6 +30,42 @@ const LeafletMap = dynamic(() => import('@/components/Map/LeafletMap'), {
 });
 
 export default function HomePage() {
+  const [complaints, setComplaints] = useState<Complaint[]>(INITIAL_COMPLAINTS);
+  const [projects, setProjects] = useState<BarangayProject[]>(INITIAL_PROJECTS);
+
+  useEffect(() => {
+    // Load complaints
+    let combinedComplaints = [...INITIAL_COMPLAINTS];
+    try {
+      const storedC = localStorage.getItem('cv_custom_complaints');
+      if (storedC) combinedComplaints = [...JSON.parse(storedC), ...combinedComplaints];
+    } catch {}
+    setComplaints(combinedComplaints);
+
+    // Load projects
+    async function loadProjects() {
+      let combinedProjects = [...INITIAL_PROJECTS];
+      try {
+        const storedP = localStorage.getItem('cv_custom_projects');
+        if (storedP) combinedProjects = [...JSON.parse(storedP), ...combinedProjects];
+      } catch {}
+
+      if (isSupabaseConfigured && supabase) {
+        try {
+          const { data } = await supabase.from('barangay_projects').select('*');
+          if (data && data.length > 0) {
+            const existing = new Set(data.map(d => d.title));
+            const filtered = combinedProjects.filter(p => !existing.has(p.title));
+            combinedProjects = [...(data as BarangayProject[]), ...filtered];
+          }
+        } catch {}
+      }
+
+      setProjects(combinedProjects);
+    }
+
+    loadProjects();
+  }, []);
   return (
     <div className="space-y-12 pb-12">
       {/* Hero Section */}
@@ -190,8 +228,8 @@ export default function HomePage() {
               <LeafletMap 
                 center={[10.7314, 122.5228]} 
                 zoom={15} 
-                complaints={INITIAL_COMPLAINTS} 
-                projects={INITIAL_PROJECTS} 
+                complaints={complaints} 
+                projects={projects} 
               />
             </div>
 
@@ -199,7 +237,7 @@ export default function HomePage() {
             <div className="lg:col-span-4 space-y-3">
               <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500">Community Projects</h4>
               <div className="space-y-2.5">
-                {INITIAL_PROJECTS.map((p) => (
+                {projects.map((p) => (
                   <div key={p.id} className="p-3 bg-slate-50 rounded-xl border border-slate-200 text-xs space-y-1">
                     <div className="flex justify-between items-start">
                       <span className="font-semibold text-slate-800">{p.title}</span>

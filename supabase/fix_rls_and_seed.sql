@@ -40,9 +40,15 @@ CREATE POLICY "Public can submit certification requests" ON public.certification
 DROP POLICY IF EXISTS "Public can view certification requests" ON public.certification_requests;
 CREATE POLICY "Public can view certification requests" ON public.certification_requests FOR SELECT USING (true);
 
--- 5. Allow Public to View Barangay Projects
+-- 5. Allow Public to View and Staff to Manage Barangay Projects
 DROP POLICY IF EXISTS "Public can view projects" ON public.barangay_projects;
 CREATE POLICY "Public can view projects" ON public.barangay_projects FOR SELECT USING (true);
+
+DROP POLICY IF EXISTS "Allow staff to insert projects" ON public.barangay_projects;
+CREATE POLICY "Allow staff to insert projects" ON public.barangay_projects FOR INSERT WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow staff to update projects" ON public.barangay_projects;
+CREATE POLICY "Allow staff to update projects" ON public.barangay_projects FOR UPDATE USING (true);
 
 -- 6. Allow Staff/Officials to Manage Blotter Records
 ALTER TABLE public.blotter_records ENABLE ROW LEVEL SECURITY;

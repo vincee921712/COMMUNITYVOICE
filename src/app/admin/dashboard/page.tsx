@@ -20,16 +20,18 @@ import {
   INITIAL_BLOTTER, 
   INITIAL_CERTIFICATES, 
   INITIAL_TANOD_SCHEDULE,
+  INITIAL_PROJECTS,
   CATEGORIES 
 } from '@/lib/mockData';
-import { Complaint, CertificateRequest, BlotterRecord } from '@/lib/types';
+import { Complaint, CertificateRequest, BlotterRecord, BarangayProject } from '@/lib/types';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase/client';
 
 export default function AdminDashboardPage() {
-  const [activeTab, setActiveTab] = useState<'complaints' | 'blotter' | 'certificates' | 'tanod'>('complaints');
+  const [activeTab, setActiveTab] = useState<'complaints' | 'blotter' | 'certificates' | 'projects' | 'tanod'>('complaints');
   const [complaints, setComplaints] = useState<Complaint[]>(INITIAL_COMPLAINTS);
   const [certificates, setCertificates] = useState<CertificateRequest[]>(INITIAL_CERTIFICATES);
   const [blotterRecords, setBlotterRecords] = useState<BlotterRecord[]>(INITIAL_BLOTTER);
+  const [projects, setProjects] = useState<BarangayProject[]>(INITIAL_PROJECTS);
   const [successBanner, setSuccessBanner] = useState<string | null>(null);
 
   // Walk-in Blotter Entry Form State
@@ -41,6 +43,17 @@ export default function AdminDashboardPage() {
   const [assignedPersonnel, setAssignedPersonnel] = useState('Kagawad on Peace & Order');
   const [narrative, setNarrative] = useState('');
   const [isSubmittingBlotter, setIsSubmittingBlotter] = useState(false);
+
+  // Barangay Projects Form State
+  const [showProjectForm, setShowProjectForm] = useState(false);
+  const [projectTitle, setProjectTitle] = useState('');
+  const [projectDescription, setProjectDescription] = useState('');
+  const [projectBudget, setProjectBudget] = useState(50000);
+  const [projectStatus, setProjectStatus] = useState<'Proposed' | 'Ongoing' | 'Completed' | 'On Hold'>('Ongoing');
+  const [projectZone, setProjectZone] = useState('Zone 1');
+  const [projectStartDate, setProjectStartDate] = useState(new Date().toISOString().split('T')[0]);
+  const [projectTargetDate, setProjectTargetDate] = useState(new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]);
+  const [isSubmittingProject, setIsSubmittingProject] = useState(false);
 
   // Load complaints from localStorage and Supabase
   useEffect(() => {
@@ -161,6 +174,110 @@ export default function AdminDashboardPage() {
 
     fetchBlotter();
   }, []);
+
+  // Load projects from localStorage and Supabase
+  useEffect(() => {
+    async function fetchProjects() {
+      let combined: BarangayProject[] = [...INITIAL_PROJECTS];
+
+      try {
+        const stored = localStorage.getItem('cv_custom_projects');
+        if (stored) {
+          const locals: BarangayProject[] = JSON.parse(stored);
+          combined = [...locals, ...combined];
+        }
+      } catch (err) {
+        console.warn('Could not read local projects:', err);
+      }
+
+      if (isSupabaseConfigured && supabase) {
+        try {
+          const { data } = await supabase
+            .from('barangay_projects')
+            .select('*')
+            .order('created_at', { ascending: false });
+
+          if (data && data.length > 0) {
+            const existing = new Set(data.map(d => d.title));
+            const filtered = combined.filter(p => !existing.has(p.title));
+            combined = [...(data as BarangayProject[]), ...filtered];
+          }
+        } catch (err) {
+          console.warn('Could not fetch projects from Supabase:', err);
+        }
+      }
+
+      setProjects(combined);
+    }
+
+    fetchProjects();
+  }, []);
+
+  // Handle New Project Creation
+  const handleProjectSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSubmittingProject(true);
+
+    const zoneCoords: Record<string, [number, number]> = {
+      'Zone 1': [10.7328, 122.5220],
+      'Zone 2': [10.7318, 122.5210],
+      'Zone 3': [10.7325, 122.5235],
+      'Zone 4': [10.7305, 122.5242],
+    };
+
+    const coords = zoneCoords[projectZone] || [10.7314, 122.5228];
+
+    const newProject: BarangayProject = {
+      id: `proj-${Date.now()}`,
+      title: projectTitle,
+      description: projectDescription,
+      status: projectStatus,
+      budget: Number(projectBudget),
+      start_date: projectStartDate,
+      target_completion_date: projectTargetDate,
+      location_address: `${projectZone}, Hibao-an Sur, Mandurriao, Iloilo City`,
+      latitude: coords[0],
+      longitude: coords[1]
+    };
+
+    // 1. Save to localStorage
+    try {
+      const stored = localStorage.getItem('cv_custom_projects');
+      const list = stored ? JSON.parse(stored) : [];
+      list.unshift(newProject);
+      localStorage.setItem('cv_custom_projects', JSON.stringify(list));
+    } catch (err) {
+      console.warn('Local storage write project error:', err);
+    }
+
+    // 2. Save to Supabase
+    if (isSupabaseConfigured && supabase) {
+      try {
+        await supabase.from('barangay_projects').insert({
+          title: projectTitle,
+          description: projectDescription,
+          status: projectStatus,
+          budget: Number(projectBudget),
+          start_date: projectStartDate,
+          target_completion_date: projectTargetDate,
+          location_address: `${projectZone}, Hibao-an Sur, Mandurriao, Iloilo City`,
+          latitude: coords[0],
+          longitude: coords[1]
+        });
+      } catch (err) {
+        console.warn('Supabase project insert warning:', err);
+      }
+    }
+
+    setProjects([newProject, ...projects]);
+    setSuccessBanner(`Community Project "${projectTitle}" published! Now visible to citizens on Homepage and Incident Map.`);
+    setShowProjectForm(false);
+    setProjectTitle('');
+    setProjectDescription('');
+    setProjectBudget(50000);
+    setIsSubmittingProject(false);
+    setTimeout(() => setSuccessBanner(null), 4000);
+  };
 
   // Handle Walk-in Blotter Submission
   const handleBlotterSubmit = async (e: React.FormEvent) => {
@@ -375,6 +492,14 @@ export default function AdminDashboardPage() {
             }`}
           >
             Certificates Approval
+          </button>
+          <button
+            onClick={() => setActiveTab('projects')}
+            className={`px-3 py-1.5 rounded-lg transition-all ${
+              activeTab === 'projects' ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            Community Projects ({projects.length})
           </button>
           <button
             onClick={() => setActiveTab('tanod')}
@@ -686,7 +811,177 @@ export default function AdminDashboardPage() {
         </div>
       )}
 
-      {/* TAB 4: TANOD SCHEDULES */}
+      {/* TAB 4: BARANGAY COMMUNITY PROJECTS */}
+      {activeTab === 'projects' && (
+        <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm space-y-6">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-slate-100 gap-3">
+            <div>
+              <h3 className="font-bold text-slate-900 text-base">Community Infrastructure & Public Works Projects</h3>
+              <p className="text-xs text-slate-500">
+                Official development programs in Barangay Hibao-an Sur. Automatically plotted on the Citizen Incident Map.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowProjectForm(!showProjectForm)}
+              className="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-semibold shadow-sm transition-all"
+            >
+              {showProjectForm ? 'Cancel Project' : '+ Add New Barangay Project'}
+            </button>
+          </div>
+
+          {/* New Project Encoder Form */}
+          {showProjectForm && (
+            <form onSubmit={handleProjectSubmit} className="p-5 bg-blue-50/50 border border-blue-200 rounded-2xl space-y-4 text-xs">
+              <div className="flex items-center justify-between border-b border-blue-200/60 pb-2">
+                <span className="font-bold text-blue-900 flex items-center gap-1.5">
+                  <Building className="w-4 h-4 text-blue-600" />
+                  Encode New Barangay Project / Public Works
+                </span>
+                <span className="text-[10px] text-blue-600 font-mono">Barangay Hibao-an Sur Development Fund</span>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">Project Title *</label>
+                  <input
+                    type="text"
+                    required
+                    value={projectTitle}
+                    onChange={(e) => setProjectTitle(e.target.value)}
+                    placeholder="e.g. Solar LED Streetlights Phase 2"
+                    className="w-full text-xs rounded-xl border border-slate-300 px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">Project Sector / Zone *</label>
+                  <select
+                    value={projectZone}
+                    onChange={(e) => setProjectZone(e.target.value)}
+                    className="w-full text-xs rounded-xl border border-slate-300 px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                  >
+                    <option value="Zone 1">Zone 1 (Purok Narra / Main Road)</option>
+                    <option value="Zone 2">Zone 2 (Drainage / Central Pathway)</option>
+                    <option value="Zone 3">Zone 3 (Near Covered Court & Hall)</option>
+                    <option value="Zone 4">Zone 4 (Outer Subdivision Boundary)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">Budget Allocation (PHP ₱) *</label>
+                  <input
+                    type="number"
+                    required
+                    value={projectBudget}
+                    onChange={(e) => setProjectBudget(Number(e.target.value))}
+                    placeholder="e.g. 150000"
+                    className="w-full text-xs rounded-xl border border-slate-300 px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">Project Status *</label>
+                  <select
+                    value={projectStatus}
+                    onChange={(e) => setProjectStatus(e.target.value as any)}
+                    className="w-full text-xs rounded-xl border border-slate-300 px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                  >
+                    <option value="Proposed">Proposed (Under Council Review)</option>
+                    <option value="Ongoing">Ongoing (Construction / In-Progress)</option>
+                    <option value="Completed">Completed (Turned Over)</option>
+                    <option value="On Hold">On Hold</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">Start Date *</label>
+                  <input
+                    type="date"
+                    required
+                    value={projectStartDate}
+                    onChange={(e) => setProjectStartDate(e.target.value)}
+                    className="w-full text-xs rounded-xl border border-slate-300 px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">Target Completion Date *</label>
+                  <input
+                    type="date"
+                    required
+                    value={projectTargetDate}
+                    onChange={(e) => setProjectTargetDate(e.target.value)}
+                    className="w-full text-xs rounded-xl border border-slate-300 px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">Project Scope & Description *</label>
+                <textarea
+                  required
+                  rows={3}
+                  value={projectDescription}
+                  onChange={(e) => setProjectDescription(e.target.value)}
+                  placeholder="Provide scope details, contractor/committee in charge, and expected impact on residents."
+                  className="w-full text-xs rounded-xl border border-slate-300 p-3 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowProjectForm(false)}
+                  className="px-4 py-2 bg-white border border-slate-300 text-slate-700 font-semibold rounded-xl text-xs hover:bg-slate-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmittingProject}
+                  className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl text-xs transition-all shadow-sm disabled:opacity-50"
+                >
+                  {isSubmittingProject ? 'Publishing Project...' : 'Publish Project to Map & Portal'}
+                </button>
+              </div>
+            </form>
+          )}
+
+          {/* Projects Grid */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+            {projects.map((p) => (
+              <div key={p.id} className="p-4 bg-slate-50 rounded-2xl border border-slate-200 space-y-2.5">
+                <div className="flex justify-between items-start gap-2">
+                  <div>
+                    <h4 className="font-bold text-slate-900 text-sm">{p.title}</h4>
+                    <span className="text-[11px] text-slate-500">{p.location_address}</span>
+                  </div>
+                  <span className={`px-2 py-0.5 rounded font-bold uppercase text-[10px] shrink-0 ${
+                    p.status === 'Completed' ? 'bg-emerald-100 text-emerald-800' :
+                    p.status === 'Ongoing' ? 'bg-blue-100 text-blue-800' : 'bg-slate-200 text-slate-700'
+                  }`}>
+                    {p.status}
+                  </span>
+                </div>
+
+                <p className="text-slate-600 line-clamp-2">{p.description}</p>
+
+                <div className="pt-2 border-t border-slate-200 flex justify-between items-center text-[11px]">
+                  <span className="font-semibold text-slate-800">
+                    Budget: <strong className="text-blue-700 font-bold">₱{Number(p.budget).toLocaleString()}</strong>
+                  </span>
+                  <span className="text-slate-500">
+                    Target: {p.target_completion_date}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* TAB 5: TANOD SCHEDULES */}
       {activeTab === 'tanod' && (
         <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm space-y-4">
           <div className="flex justify-between items-center pb-3 border-b border-slate-100">

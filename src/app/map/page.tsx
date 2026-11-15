@@ -14,7 +14,7 @@ import {
   AlertTriangle
 } from 'lucide-react';
 import { INITIAL_COMPLAINTS, INITIAL_PROJECTS, CATEGORIES } from '@/lib/mockData';
-import { Complaint } from '@/lib/types';
+import { Complaint, BarangayProject } from '@/lib/types';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase/client';
 
 const LeafletMap = dynamic(() => import('@/components/Map/LeafletMap'), {
@@ -28,6 +28,7 @@ const LeafletMap = dynamic(() => import('@/components/Map/LeafletMap'), {
 
 export default function MapPage() {
   const [complaints, setComplaints] = useState<Complaint[]>(INITIAL_COMPLAINTS);
+  const [projects, setProjects] = useState<BarangayProject[]>(INITIAL_PROJECTS);
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [selectedPriority, setSelectedPriority] = useState<string>('all');
   const [showProjects, setShowProjects] = useState<boolean>(true);
@@ -65,7 +66,37 @@ export default function MapPage() {
       setComplaints(combined);
     }
 
+    async function loadAllProjects() {
+      let combinedProjects: BarangayProject[] = [...INITIAL_PROJECTS];
+
+      try {
+        const stored = localStorage.getItem('cv_custom_projects');
+        if (stored) {
+          const locals: BarangayProject[] = JSON.parse(stored);
+          combinedProjects = [...locals, ...combinedProjects];
+        }
+      } catch (e) {
+        console.warn('Could not read local projects', e);
+      }
+
+      if (isSupabaseConfigured && supabase) {
+        try {
+          const { data } = await supabase.from('barangay_projects').select('*');
+          if (data && data.length > 0) {
+            const existing = new Set(data.map(d => d.title));
+            const filtered = combinedProjects.filter(p => !existing.has(p.title));
+            combinedProjects = [...(data as BarangayProject[]), ...filtered];
+          }
+        } catch (e) {
+          console.warn('Could not fetch projects from Supabase', e);
+        }
+      }
+
+      setProjects(combinedProjects);
+    }
+
     loadAllComplaints();
+    loadAllProjects();
   }, []);
 
   // Quick jump zones in Barangay Hibao-an Sur
@@ -203,7 +234,7 @@ export default function MapPage() {
           center={mapCenter}
           zoom={mapZoom}
           complaints={filteredComplaints}
-          projects={showProjects ? INITIAL_PROJECTS : []}
+          projects={showProjects ? projects : []}
           layerMode={layerMode}
         />
       </div>
