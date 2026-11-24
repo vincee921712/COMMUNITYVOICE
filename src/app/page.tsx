@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import { 
   PlusCircle, 
@@ -18,6 +18,7 @@ import dynamic from 'next/dynamic';
 import { INITIAL_COMPLAINTS, INITIAL_PROJECTS } from '@/lib/mockData';
 import { Complaint, BarangayProject } from '@/lib/types';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase/client';
+import { useAuth } from '@/context/AuthContext';
 
 // Dynamically import Leaflet Map with no SSR
 const LeafletMap = dynamic(() => import('@/components/Map/LeafletMap'), {
@@ -30,8 +31,37 @@ const LeafletMap = dynamic(() => import('@/components/Map/LeafletMap'), {
 });
 
 export default function HomePage() {
+  const { user } = useAuth();
   const [complaints, setComplaints] = useState<Complaint[]>(INITIAL_COMPLAINTS);
   const [projects, setProjects] = useState<BarangayProject[]>(INITIAL_PROJECTS);
+
+  const isStaffOrOfficial = Boolean(
+    user && (user.role === 'staff' || user.role === 'official' || user.role === 'admin')
+  );
+
+  const visibleComplaints = useMemo(() => {
+    if (isStaffOrOfficial) {
+      return complaints;
+    }
+
+    // Resident only sees their own complaints
+    let myTrackings: string[] = [];
+    try {
+      const stored = localStorage.getItem('cv_my_tracking_numbers');
+      if (stored) myTrackings = JSON.parse(stored);
+    } catch {}
+
+    const userName = user?.full_name?.toLowerCase().trim();
+    const userPhone = user?.phone_number?.replace(/\D/g, '');
+
+    return complaints.filter((c) => {
+      if (myTrackings.includes(c.tracking_number)) return true;
+      if (userName && c.resident_name && c.resident_name.toLowerCase().trim() === userName) return true;
+      if (userPhone && c.resident_contact && c.resident_contact.replace(/\D/g, '') === userPhone) return true;
+      if (user?.email === 'resident@hibaoan.gov.ph' && c.tracking_number === 'CV-2026-001') return true;
+      return false;
+    });
+  }, [complaints, isStaffOrOfficial, user]);
 
   useEffect(() => {
     // Load complaints
@@ -228,7 +258,7 @@ export default function HomePage() {
               <LeafletMap 
                 center={[10.7314, 122.5228]} 
                 zoom={15} 
-                complaints={complaints} 
+                complaints={visibleComplaints} 
                 projects={projects} 
               />
             </div>

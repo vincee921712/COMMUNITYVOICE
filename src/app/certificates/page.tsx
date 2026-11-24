@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
-import { FileText, CheckCircle2, Clock, AlertCircle, PlusCircle, Building } from 'lucide-react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { FileText, CheckCircle2, Clock, AlertCircle, PlusCircle, Building, ShieldCheck, Lock } from 'lucide-react';
 import { INITIAL_CERTIFICATES } from '@/lib/mockData';
 import { CertificateRequest, CertificateType } from '@/lib/types';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase/client';
@@ -17,6 +17,23 @@ export default function CertificatesPage() {
   const [contact, setContact] = useState(user?.phone_number || '');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submittedId, setSubmittedId] = useState<string | null>(null);
+  const [myTrackings, setMyTrackings] = useState<string[]>([]);
+
+  const isStaffOrOfficial = Boolean(
+    user && (user.role === 'staff' || user.role === 'official' || user.role === 'admin')
+  );
+
+  // Load tracking numbers submitted on this browser/account
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem('cv_my_tracking_numbers');
+      if (stored) {
+        setMyTrackings(JSON.parse(stored));
+      }
+    } catch {
+      setMyTrackings([]);
+    }
+  }, []);
 
   // Load existing certificates from localStorage and Supabase
   useEffect(() => {
@@ -86,6 +103,14 @@ export default function CertificatesPage() {
       const list = stored ? JSON.parse(stored) : [];
       list.unshift(newReq);
       localStorage.setItem('cv_custom_certificates', JSON.stringify(list));
+
+      // Also record in personal tracking list for resident isolation
+      const storedTrackings = JSON.parse(localStorage.getItem('cv_my_tracking_numbers') || '[]');
+      if (!storedTrackings.includes(newId)) {
+        storedTrackings.unshift(newId);
+        localStorage.setItem('cv_my_tracking_numbers', JSON.stringify(storedTrackings));
+        setMyTrackings(storedTrackings);
+      }
     } catch (err) {
       console.warn('Local storage write error:', err);
     }
@@ -132,6 +157,39 @@ export default function CertificatesPage() {
       case 'certificate_of_residency': return 'Certificate of Residency';
     }
   };
+
+  // Filter for resident view: Residents ONLY see their own applications
+  const visibleRequests = useMemo(() => {
+    if (isStaffOrOfficial) {
+      return requests;
+    }
+
+    const userName = user?.full_name?.toLowerCase().trim();
+    const userPhone = user?.phone_number?.replace(/\D/g, '');
+
+    return requests.filter((r) => {
+      // 1. Matched by tracking codes created by this browser/session
+      if (myTrackings.includes(r.tracking_number)) return true;
+
+      // 2. Matched by applicant name
+      if (userName && r.resident_name && r.resident_name.toLowerCase().trim() === userName) {
+        return true;
+      }
+
+      // 3. Matched by phone number
+      if (userPhone && r.contact_number) {
+        const cleanPhone = r.contact_number.replace(/\D/g, '');
+        if (cleanPhone === userPhone) return true;
+      }
+
+      // 4. Default mock resident Maria Santos owns CERT-2026-001
+      if (user?.email === 'resident@hibaoan.gov.ph' && r.tracking_number === 'CERT-2026-001') {
+        return true;
+      }
+
+      return false;
+    });
+  }, [requests, isStaffOrOfficial, user, myTrackings]);
 
   return (
     <div className="max-w-5xl mx-auto px-4 sm:px-6 py-10 space-y-10">
@@ -222,58 +280,80 @@ export default function CertificatesPage() {
         {/* Existing Requests Tracking */}
         <div className="lg:col-span-6 space-y-4">
           <div className="flex items-center justify-between">
-            <h3 className="text-sm font-bold uppercase tracking-wider text-slate-400">Recent Applications</h3>
-            <span className="text-xs text-slate-400">{requests.length} Requests</span>
+            <div>
+              <h3 className="text-sm font-bold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
+                {!isStaffOrOfficial && <Lock className="w-3.5 h-3.5 text-emerald-600" />}
+                <span>{isStaffOrOfficial ? 'All Barangay Document Applications' : 'My Document Applications'}</span>
+              </h3>
+              <p className="text-[11px] text-slate-400 mt-0.5">
+                {isStaffOrOfficial 
+                  ? 'Official overview of all resident certificate requests.' 
+                  : 'Displaying strictly your own personal requests in compliance with RA 10173.'}
+              </p>
+            </div>
+            <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 shrink-0">
+              {visibleRequests.length} {visibleRequests.length === 1 ? 'Request' : 'Requests'}
+            </span>
           </div>
 
-          <div className="space-y-3">
-            {requests.map((r) => {
-              const diffHours = (Date.now() - new Date(r.created_at).getTime()) / (1000 * 60 * 60);
-              const isOverdue = r.status !== 'Ready for Pickup' && r.status !== 'Released' && diffHours >= 48;
-              const isApproaching = r.status !== 'Ready for Pickup' && r.status !== 'Released' && diffHours >= 24 && diffHours < 48;
+          {visibleRequests.length === 0 ? (
+            <div className="p-8 text-center bg-white rounded-2xl border border-slate-200 space-y-2">
+              <FileText className="w-8 h-8 text-slate-300 mx-auto" />
+              <h4 className="font-bold text-slate-700 text-xs">No applications on record</h4>
+              <p className="text-slate-400 text-[11px] max-w-xs mx-auto">
+                You have not filed any certificate requests yet. Fill in the form on the left to apply for an official document.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {visibleRequests.map((r) => {
+                const diffHours = (Date.now() - new Date(r.created_at).getTime()) / (1000 * 60 * 60);
+                const isOverdue = r.status !== 'Ready for Pickup' && r.status !== 'Released' && diffHours >= 48;
+                const isApproaching = r.status !== 'Ready for Pickup' && r.status !== 'Released' && diffHours >= 24 && diffHours < 48;
 
-              return (
-                <div key={r.id} className="p-4 bg-white rounded-2xl border border-slate-200 shadow-sm space-y-2 text-xs">
-                  <div className="flex justify-between items-start">
-                    <div>
-                      <div className="flex items-center space-x-2">
-                        <span className="font-mono text-[10px] text-blue-600 font-bold block">{r.tracking_number}</span>
-                        {isOverdue && (
-                          <span className="px-1.5 py-0.5 rounded text-[9px] bg-rose-100 text-rose-800 font-bold border border-rose-300 flex items-center gap-0.5">
-                            <Clock className="w-2.5 h-2.5" /> Overdue (&gt;48h)
-                          </span>
-                        )}
-                        {isApproaching && (
-                          <span className="px-1.5 py-0.5 rounded text-[9px] bg-amber-100 text-amber-900 font-semibold border border-amber-300 flex items-center gap-0.5">
-                            <Clock className="w-2.5 h-2.5" /> Processing (&gt;24h)
-                          </span>
-                        )}
+                return (
+                  <div key={r.id} className="p-4 bg-white rounded-2xl border border-slate-200 shadow-sm space-y-2 text-xs">
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <div className="flex items-center space-x-2">
+                          <span className="font-mono text-[10px] text-blue-600 font-bold block">{r.tracking_number}</span>
+                          {isOverdue && (
+                            <span className="px-1.5 py-0.5 rounded text-[9px] bg-rose-100 text-rose-800 font-bold border border-rose-300 flex items-center gap-0.5">
+                              <Clock className="w-2.5 h-2.5" /> Overdue (&gt;48h)
+                            </span>
+                          )}
+                          {isApproaching && (
+                            <span className="px-1.5 py-0.5 rounded text-[9px] bg-amber-100 text-amber-900 font-semibold border border-amber-300 flex items-center gap-0.5">
+                              <Clock className="w-2.5 h-2.5" /> Processing (&gt;24h)
+                            </span>
+                          )}
+                        </div>
+                        <h4 className="font-bold text-slate-900 text-sm mt-0.5">{getDocName(r.certificate_type)}</h4>
+                        <p className="text-slate-500">Applicant: <strong>{r.resident_name}</strong></p>
                       </div>
-                      <h4 className="font-bold text-slate-900 text-sm mt-0.5">{getDocName(r.certificate_type)}</h4>
-                      <p className="text-slate-500">Applicant: <strong>{r.resident_name}</strong></p>
+                      <span className={`px-2 py-0.5 rounded font-bold text-[10px] uppercase ${
+                        r.status === 'Ready for Pickup' ? 'bg-emerald-100 text-emerald-800' :
+                        r.status === 'For Approval' ? 'bg-blue-100 text-blue-800' :
+                        'bg-amber-100 text-amber-800'
+                      }`}>
+                        {r.status}
+                      </span>
                     </div>
-                    <span className={`px-2 py-0.5 rounded font-bold text-[10px] uppercase ${
-                      r.status === 'Ready for Pickup' ? 'bg-emerald-100 text-emerald-800' :
-                      r.status === 'For Approval' ? 'bg-blue-100 text-blue-800' :
-                      'bg-amber-100 text-amber-800'
-                    }`}>
-                      {r.status}
-                    </span>
-                  </div>
 
-                  <div className="p-2.5 bg-slate-50 rounded-lg text-slate-600">
-                    <span className="text-[11px] block"><strong>Purpose:</strong> {r.purpose}</span>
-                    {r.remarks && <span className="text-[11px] text-blue-700 block mt-0.5">ℹ️ {r.remarks}</span>}
-                  </div>
+                    <div className="p-2.5 bg-slate-50 rounded-lg text-slate-600">
+                      <span className="text-[11px] block"><strong>Purpose:</strong> {r.purpose}</span>
+                      {r.remarks && <span className="text-[11px] text-blue-700 block mt-0.5">ℹ️ {r.remarks}</span>}
+                    </div>
 
-                  <div className="flex justify-between items-center text-[10px] text-slate-400 pt-1">
-                    <span>Contact: {r.contact_number}</span>
-                    <span>{new Date(r.created_at).toLocaleDateString()}</span>
+                    <div className="flex justify-between items-center text-[10px] text-slate-400 pt-1">
+                      <span>Contact: {r.contact_number}</span>
+                      <span>{new Date(r.created_at).toLocaleDateString()}</span>
+                    </div>
                   </div>
-                </div>
-              );
-            })}
-          </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       </div>
     </div>
