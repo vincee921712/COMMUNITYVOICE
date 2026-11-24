@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import dynamic from 'next/dynamic';
 import { 
   PlusCircle, 
@@ -11,11 +11,19 @@ import {
   Upload, 
   X, 
   Shield, 
-  PhoneCall 
+  PhoneCall,
+  ExternalLink,
+  Eye,
+  Info
 } from 'lucide-react';
 import { CATEGORIES as DEFAULT_CATEGORIES } from '@/lib/mockData';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase/client';
-import { Category, PriorityLevel } from '@/lib/types';
+import { Category, PriorityLevel, Complaint } from '@/lib/types';
+import { 
+  checkDuplicateProximity, 
+  fetchAllActiveComplaints,
+  DuplicateDetectionResult 
+} from '@/lib/duplicateDetection';
 
 const LeafletMap = dynamic(() => import('@/components/Map/LeafletMap'), {
   ssr: false,
@@ -35,6 +43,9 @@ export default function ReportPage() {
   const [categoryId, setCategoryId] = useState('general');
   const [selectedPin, setSelectedPin] = useState<[number, number]>([10.7314, 122.5228]);
   
+  // Existing complaints cache for proximity/duplicate checking
+  const [existingComplaints, setExistingComplaints] = useState<Complaint[]>([]);
+  
   // Image Upload State
   const [attachedImage, setAttachedImage] = useState<string | null>(null);
   const [imageFileName, setImageFileName] = useState<string | null>(null);
@@ -50,12 +61,16 @@ export default function ReportPage() {
     involves_minor: boolean;
   } | null>(null);
 
+  // Duplicate Check Modal State
+  const [showDuplicateModal, setShowDuplicateModal] = useState(false);
+  const [previewingExistingComplaint, setPreviewingExistingComplaint] = useState<Complaint | null>(null);
+
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submittedTracking, setSubmittedTracking] = useState<string | null>(null);
 
-  // Fetch live categories from Supabase on mount
+  // Fetch live categories and existing active complaints on mount
   useEffect(() => {
-    async function loadCategories() {
+    async function loadInitialData() {
       if (isSupabaseConfigured && supabase) {
         try {
           const { data, error } = await supabase.from('categories').select('*');
@@ -66,9 +81,30 @@ export default function ReportPage() {
           // Keep default fallback categories
         }
       }
+
+      // Fetch active complaints for duplicate detection
+      try {
+        const complaintsList = await fetchAllActiveComplaints();
+        setExistingComplaints(complaintsList);
+      } catch (err) {
+        console.warn('Failed to load complaints for duplicate check:', err);
+      }
     }
-    loadCategories();
+    loadInitialData();
   }, []);
+
+  // Compute real-time proximity warning whenever pin, category, title, or description changes
+  const duplicateAlert: DuplicateDetectionResult = useMemo(() => {
+    return checkDuplicateProximity(
+      selectedPin[0],
+      selectedPin[1],
+      title,
+      description,
+      categoryId,
+      existingComplaints,
+      100 // 100 meters threshold
+    );
+  }, [selectedPin, title, description, categoryId, existingComplaints]);
 
   const handleFileProcess = (file: File) => {
     if (!file.type.startsWith('image/')) {
@@ -148,17 +184,35 @@ export default function ReportPage() {
     }
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  // Form submission handler: checks for duplicates before proceeding
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+
+    // If a nearby duplicate is found, intercept with warning confirmation modal
+    if (duplicateAlert.isDuplicateFound && duplicateAlert.matchedComplaint) {
+      setShowDuplicateModal(true);
+      return;
+    }
+
+    // Otherwise proceed to execute submission
+    executeSubmission(false);
+  };
+
+  // Execute database and local storage submission
+  const executeSubmission = async (isBypassedDuplicate: boolean) => {
     setIsSubmitting(true);
+    setShowDuplicateModal(false);
 
     const trackingCode = `CV-2026-${Math.floor(1000 + Math.random() * 9000)}`;
     const assignedCategory = categories.find(c => c.id === categoryId);
+    const matchedRef = duplicateAlert.matchedComplaint?.tracking_number;
 
     // 1. Prepare complaint object
-    const newComplaintRecord = {
+    const newComplaintRecord: Complaint = {
       id: `cmp-${Date.now()}`,
       tracking_number: trackingCode,
+      resident_name: name || 'Anonymous Resident',
+      resident_contact: contact || undefined,
       title,
       description,
       location_address: 'Barangay Hibao-an Sur, Mandurriao, Iloilo City',
@@ -166,13 +220,18 @@ export default function ReportPage() {
       longitude: selectedPin[1],
       category_id: categoryId,
       priority: aiResult?.priority || assignedCategory?.default_priority || 'Medium',
-      status: 'Submitted' as const,
+      status: 'Submitted',
       ai_category_id: aiResult?.category || categoryId,
       ai_priority: aiResult?.priority || 'Medium',
       ai_justification: aiResult?.justification || 'Self-submitted by resident',
+      ai_confidence: 0.92,
+      is_staff_confirmed: false,
       is_minor_flagged: aiResult?.involves_minor || false,
-      attachments: attachedImage ? [{ name: imageFileName || 'evidence.jpg', data: attachedImage }] : [],
-      created_at: new Date().toISOString()
+      is_duplicate_flagged: isBypassedDuplicate,
+      duplicate_of_id: isBypassedDuplicate && matchedRef ? matchedRef : undefined,
+      duplicate_similarity_score: isBypassedDuplicate ? duplicateAlert.similarityScore / 100 : undefined,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
     };
 
     // 2. Always persist locally in localStorage so Track, Map & Admin reflect immediately
@@ -202,6 +261,8 @@ export default function ReportPage() {
           ai_priority: aiResult?.priority || 'Medium',
           ai_justification: aiResult?.justification || 'Self-submitted by resident',
           is_minor_flagged: aiResult?.involves_minor || false,
+          is_duplicate_flagged: isBypassedDuplicate,
+          duplicate_of_id: isBypassedDuplicate && matchedRef ? matchedRef : null,
           attachments: attachedImage ? [{ name: imageFileName, data: attachedImage }] : []
         });
 
@@ -229,7 +290,7 @@ export default function ReportPage() {
           File a Community Concern or Complaint
         </h1>
         <p className="text-slate-500 text-xs sm:text-sm mt-1">
-          Your submission is automatically analyzed for priority scoring, checked for minor safety protocols, and routed to the assigned official.
+          Your submission is automatically analyzed for priority scoring, checked for minor safety protocols, verified against nearby duplicates, and routed to the assigned official.
         </p>
       </div>
 
@@ -462,10 +523,44 @@ export default function ReportPage() {
                 onSelectLocation={(lat, lng) => setSelectedPin([lat, lng])}
               />
             </div>
+
             <p className="text-[11px] text-slate-500 flex items-center space-x-1">
               <MapPin className="w-3.5 h-3.5 text-blue-600 shrink-0" />
               <span>Click anywhere on the map of Barangay Hibao-an Sur to adjust the pin location.</span>
             </p>
+
+            {/* LIVE PROXIMITY DUPLICATE ALERT BANNER */}
+            {duplicateAlert.isDuplicateFound && duplicateAlert.matchedComplaint && (
+              <div className="p-4 bg-amber-50 border border-amber-300 rounded-2xl text-xs text-amber-900 space-y-2 animate-in fade-in">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex items-center space-x-2 font-bold text-amber-900">
+                    <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 animate-bounce" />
+                    <span>Potential Duplicate Incident Nearby ({duplicateAlert.distanceMeters}m away)</span>
+                  </div>
+                  <span className="px-2 py-0.5 bg-amber-200 text-amber-900 rounded font-mono text-[10px] font-bold">
+                    {duplicateAlert.matchedComplaint.tracking_number}
+                  </span>
+                </div>
+
+                <p className="text-amber-800 text-xs leading-relaxed">
+                  <strong>Existing Active Report:</strong> &ldquo;{duplicateAlert.matchedComplaint.title}&rdquo; is already logged approximately <strong>{duplicateAlert.distanceMeters} meters</strong> from this location.
+                </p>
+
+                <div className="pt-1 flex items-center justify-between">
+                  <span className="text-[11px] text-amber-700">
+                    Current Status: <strong className="uppercase">{duplicateAlert.matchedComplaint.status}</strong>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setPreviewingExistingComplaint(duplicateAlert.matchedComplaint)}
+                    className="inline-flex items-center space-x-1 text-xs font-bold text-amber-900 hover:text-amber-950 underline underline-offset-2"
+                  >
+                    <Eye className="w-3.5 h-3.5" />
+                    <span>View Existing Incident Details</span>
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* STEP 4: Complainant Details */}
@@ -500,16 +595,169 @@ export default function ReportPage() {
             </div>
           </div>
 
+          {/* Proximity Warning Summary before submit button if duplicate alert is active */}
+          {duplicateAlert.isDuplicateFound && duplicateAlert.matchedComplaint && (
+            <div className="p-3 bg-amber-50/80 border border-amber-200 rounded-xl text-xs text-amber-800 flex items-center space-x-2">
+              <Info className="w-4 h-4 text-amber-600 shrink-0" />
+              <span>
+                <strong>Note:</strong> A similar report exists nearby. You will be prompted to confirm if your report is distinct before filing.
+              </span>
+            </div>
+          )}
+
           {/* Submit Button */}
           <button
             type="submit"
             disabled={isSubmitting}
-            className="w-full py-4 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-2xl shadow-lg shadow-blue-500/25 transition-all text-sm flex items-center justify-center space-x-2 cursor-pointer disabled:opacity-50"
+            className={`w-full py-4 text-white font-bold rounded-2xl shadow-lg transition-all text-sm flex items-center justify-center space-x-2 cursor-pointer disabled:opacity-50 ${
+              duplicateAlert.isDuplicateFound
+                ? 'bg-amber-600 hover:bg-amber-700 shadow-amber-500/25'
+                : 'bg-blue-600 hover:bg-blue-700 shadow-blue-500/25'
+            }`}
           >
-            <PlusCircle className="w-4 h-4" />
-            <span>{isSubmitting ? 'Saving to Database...' : 'Submit Report to Barangay Hibao-an Sur'}</span>
+            {duplicateAlert.isDuplicateFound ? (
+              <>
+                <AlertTriangle className="w-4 h-4" />
+                <span>{isSubmitting ? 'Evaluating Submission...' : 'Review & Submit Report (Proximity Check)'}</span>
+              </>
+            ) : (
+              <>
+                <PlusCircle className="w-4 h-4" />
+                <span>{isSubmitting ? 'Saving to Database...' : 'Submit Report to Barangay Hibao-an Sur'}</span>
+              </>
+            )}
           </button>
         </form>
+      )}
+
+      {/* MODAL 1: PRE-SUBMISSION DUPLICATE WARNING MODAL */}
+      {showDuplicateModal && duplicateAlert.matchedComplaint && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-lg w-full p-6 sm:p-7 shadow-2xl border border-amber-200 space-y-5 animate-in zoom-in-95">
+            <div className="flex items-center space-x-3 text-amber-600">
+              <div className="w-12 h-12 bg-amber-100 rounded-2xl flex items-center justify-center shrink-0">
+                <AlertTriangle className="w-6 h-6 text-amber-600" />
+              </div>
+              <div>
+                <h3 className="text-base sm:text-lg font-bold text-slate-900">Similar Incident Already Reported Nearby</h3>
+                <p className="text-xs text-slate-500">Proximity & Duplicate Incident Safeguard</p>
+              </div>
+            </div>
+
+            <p className="text-xs text-slate-600 leading-relaxed">
+              Our automated geospatial check found an active complaint registered within <strong>{duplicateAlert.distanceMeters} meters</strong> of your pinned location. Submitting multiple reports for the same incident may delay emergency and tanod crew dispatch.
+            </p>
+
+            {/* Existing Complaint Details Card */}
+            <div className="bg-amber-50/80 border border-amber-200 rounded-2xl p-4 text-xs space-y-2.5">
+              <div className="flex items-center justify-between">
+                <span className="font-mono font-bold text-blue-700 bg-blue-100 px-2 py-0.5 rounded text-[11px]">
+                  Ref: {duplicateAlert.matchedComplaint.tracking_number}
+                </span>
+                <span className="text-[11px] font-semibold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded">
+                  Status: {duplicateAlert.matchedComplaint.status}
+                </span>
+              </div>
+
+              <div>
+                <h4 className="font-bold text-slate-900 text-sm">{duplicateAlert.matchedComplaint.title}</h4>
+                <p className="text-slate-600 text-xs mt-1 line-clamp-2">{duplicateAlert.matchedComplaint.description}</p>
+              </div>
+
+              <div className="pt-2 border-t border-amber-200/60 text-[11px] text-slate-500 space-y-1">
+                <p>📍 <strong>Distance:</strong> Approx. {duplicateAlert.distanceMeters} meters away</p>
+                {duplicateAlert.matchedComplaint.assigned_to && (
+                  <p>👤 <strong>Assigned To:</strong> {duplicateAlert.matchedComplaint.assigned_to}</p>
+                )}
+                <p>📅 <strong>Date Reported:</strong> {new Date(duplicateAlert.matchedComplaint.created_at).toLocaleDateString()}</p>
+              </div>
+            </div>
+
+            {/* Decision Actions */}
+            <div className="space-y-2 pt-2">
+              <a
+                href={`/track?id=${duplicateAlert.matchedComplaint.tracking_number}`}
+                className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl text-xs flex items-center justify-center space-x-1.5 transition-all shadow-sm"
+              >
+                <ExternalLink className="w-3.5 h-3.5" />
+                <span>Track Existing Case ({duplicateAlert.matchedComplaint.tracking_number}) Instead</span>
+              </a>
+
+              <button
+                type="button"
+                onClick={() => executeSubmission(true)}
+                disabled={isSubmitting}
+                className="w-full py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-xl text-xs transition-all flex items-center justify-center space-x-1"
+              >
+                <span>Submit Anyway (This is a Distinct / Separate Incident)</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setShowDuplicateModal(false)}
+                className="w-full py-2 text-slate-400 hover:text-slate-600 font-medium text-xs text-center"
+              >
+                Go Back & Adjust Pin / Description
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 2: DETAIL PREVIEW OF EXISTING NEARBY COMPLAINT */}
+      {previewingExistingComplaint && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-4 animate-in zoom-in-95">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center space-x-2">
+                <span className="font-mono text-xs font-bold text-blue-600">{previewingExistingComplaint.tracking_number}</span>
+                <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 text-[10px] font-bold rounded">
+                  {previewingExistingComplaint.status}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPreviewingExistingComplaint(null)}
+                className="p-1 text-slate-400 hover:text-slate-600 rounded-lg"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-2 text-xs">
+              <h3 className="text-base font-bold text-slate-900">{previewingExistingComplaint.title}</h3>
+              <p className="text-slate-600 leading-relaxed">{previewingExistingComplaint.description}</p>
+              
+              <div className="p-3 bg-slate-50 rounded-xl space-y-1.5 text-[11px] text-slate-600 mt-2">
+                <p>📍 <strong>Location:</strong> {previewingExistingComplaint.location_address}</p>
+                <p>⚡ <strong>Priority:</strong> {previewingExistingComplaint.priority}</p>
+                {previewingExistingComplaint.assigned_to && (
+                  <p>👤 <strong>Handling Official:</strong> {previewingExistingComplaint.assigned_to}</p>
+                )}
+                <p>📅 <strong>Filed:</strong> {new Date(previewingExistingComplaint.created_at).toLocaleString()}</p>
+              </div>
+            </div>
+
+            <div className="pt-2 flex justify-between gap-2">
+              <a
+                href={`/track?id=${previewingExistingComplaint.tracking_number}`}
+                target="_blank"
+                rel="noreferrer"
+                className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl text-xs text-center flex items-center justify-center space-x-1"
+              >
+                <span>Full Tracking Page</span>
+                <ExternalLink className="w-3.5 h-3.5 ml-1" />
+              </a>
+              <button
+                type="button"
+                onClick={() => setPreviewingExistingComplaint(null)}
+                className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-xl text-xs"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

@@ -930,6 +930,11 @@ export default function AdminDashboardPage() {
                           ⚠️ Involves Minor (SWDO Protocol)
                         </span>
                       )}
+                      {c.is_duplicate_flagged && (
+                        <span className="px-2 py-0.5 bg-amber-100 text-amber-800 border border-amber-300 rounded text-[10px] font-bold">
+                          ⚠️ Duplicate Flag {c.duplicate_of_id ? `(Ref: ${c.duplicate_of_id})` : ''}
+                        </span>
+                      )}
                     </div>
                     <h3 className="font-bold text-base text-slate-900 mt-1">{c.title}</h3>
                     <p className="text-xs text-slate-600 mt-1">{c.description}</p>
