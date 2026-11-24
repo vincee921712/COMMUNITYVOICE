@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { 
@@ -18,6 +18,7 @@ import {
   User
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
+import { getStoredSmsLogs, DispatchedSms } from '@/lib/smsService';
 
 export default function Navbar() {
   const pathname = usePathname();
@@ -25,11 +26,16 @@ export default function Navbar() {
   const { user, logout } = useAuth();
   const [showNotifications, setShowNotifications] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [smsLogs, setSmsLogs] = useState<DispatchedSms[]>([]);
 
-  const notifications = [
-    { id: 1, text: 'SMS Sent: Your complaint CV-2026-001 has been assigned to Kagawad R. Villanueva.', time: '10m ago' },
-    { id: 2, text: 'SMS Sent: Certificate of Indigency CERT-2026-001 is Ready for Pickup at Window 1.', time: '1h ago' }
-  ];
+  useEffect(() => {
+    setSmsLogs(getStoredSmsLogs());
+    const handler = () => setSmsLogs(getStoredSmsLogs());
+    window.addEventListener('cv_sms_updated', handler);
+    return () => window.removeEventListener('cv_sms_updated', handler);
+  }, []);
+
+  const isLiveSms = process.env.NEXT_PUBLIC_SMS_MODE === 'live';
 
   const navLinks = [
     { href: '/', label: 'Overview', icon: Building2 },
@@ -138,18 +144,55 @@ export default function Navbar() {
             </button>
 
             {showNotifications && (
-              <div className="absolute right-0 mt-2 w-80 bg-white rounded-xl shadow-xl border border-slate-200 p-3 z-50 text-xs">
-                <div className="flex justify-between items-center pb-2 border-b border-slate-100 font-semibold text-slate-800">
-                  <span>Simulated SMS & Notifications</span>
-                  <span className="text-[10px] bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded">Test Mode Active</span>
+              <div className="absolute right-0 mt-2 w-88 sm:w-96 bg-white rounded-2xl shadow-2xl border border-slate-200 p-3.5 z-50 text-xs animate-in fade-in zoom-in-95">
+                <div className="flex justify-between items-center pb-2.5 border-b border-slate-100">
+                  <div className="flex items-center space-x-1.5 font-bold text-slate-800">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping"></span>
+                    <span>Semaphore SMS Gateway Outbox</span>
+                  </div>
+                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                    isLiveSms 
+                      ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' 
+                      : 'bg-blue-100 text-blue-800 border border-blue-200'
+                  }`}>
+                    {isLiveSms ? 'Live Gateway Active' : 'Simulation Mode'}
+                  </span>
                 </div>
-                <div className="divide-y divide-slate-100">
-                  {notifications.map((n) => (
-                    <div key={n.id} className="py-2.5">
-                      <p className="text-slate-700">{n.text}</p>
-                      <span className="text-[10px] text-slate-400 mt-1 block">{n.time}</span>
+
+                <div className="max-h-80 overflow-y-auto divide-y divide-slate-100 my-1">
+                  {smsLogs.length === 0 ? (
+                    <div className="py-6 text-center text-slate-400 text-xs">
+                      No SMS notifications sent yet.
                     </div>
-                  ))}
+                  ) : (
+                    smsLogs.map((sms) => (
+                      <div key={sms.id} className="py-2.5 space-y-1">
+                        <div className="flex items-center justify-between text-[11px]">
+                          <span className="font-semibold text-slate-900 font-mono">
+                            📱 {sms.recipient}
+                          </span>
+                          <span className={`px-1.5 py-0.2 rounded font-bold text-[9px] uppercase ${
+                            sms.status === 'Sent (Live)'
+                              ? 'bg-emerald-100 text-emerald-700'
+                              : 'bg-slate-100 text-slate-600'
+                          }`}>
+                            {sms.status}
+                          </span>
+                        </div>
+                        <p className="text-slate-600 text-[11px] leading-relaxed line-clamp-3">
+                          {sms.message}
+                        </p>
+                        <div className="flex items-center justify-between text-[10px] text-slate-400 pt-0.5">
+                          <span>{sms.refNumber ? `Ref: ${sms.refNumber}` : (sms.recipientName || 'Alert')}</span>
+                          <span>{new Date(sms.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+
+                <div className="pt-2 border-t border-slate-100 text-center text-[10px] text-slate-400">
+                  Real SMS cellular dispatch powered by Semaphore API Philippines
                 </div>
               </div>
             )}

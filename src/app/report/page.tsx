@@ -24,6 +24,10 @@ import {
   fetchAllActiveComplaints,
   DuplicateDetectionResult 
 } from '@/lib/duplicateDetection';
+import { 
+  notifyComplaintSubmitted, 
+  notifyCaptainHighPriorityAlert 
+} from '@/lib/smsService';
 
 const LeafletMap = dynamic(() => import('@/components/Map/LeafletMap'), {
   ssr: false,
@@ -272,6 +276,27 @@ export default function ReportPage() {
       } catch (err) {
         console.error('Database connection error:', err);
       }
+    }
+
+    // 4. Dispatch SMS Notifications via Semaphore Gateway
+    try {
+      // Receipt to resident if mobile number was provided
+      if (contact && contact.trim()) {
+        notifyComplaintSubmitted(contact, trackingCode, title, name);
+      }
+      // Automated high priority emergency alert to Captain & Tanod Dispatch
+      const finalPriority = aiResult?.priority || assignedCategory?.default_priority || 'Medium';
+      if (finalPriority === 'High' || aiResult?.involves_minor) {
+        notifyCaptainHighPriorityAlert(
+          '0917-555-0100',
+          trackingCode,
+          title,
+          'Barangay Hibao-an Sur',
+          'High'
+        );
+      }
+    } catch (smsErr) {
+      console.warn('SMS dispatch error:', smsErr);
     }
 
     setSubmittedTracking(trackingCode);

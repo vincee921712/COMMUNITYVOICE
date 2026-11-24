@@ -6,6 +6,7 @@ import { INITIAL_CERTIFICATES } from '@/lib/mockData';
 import { CertificateRequest, CertificateType } from '@/lib/types';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase/client';
 import { useAuth } from '@/context/AuthContext';
+import { notifyCertificateSubmitted } from '@/lib/smsService';
 
 export default function CertificatesPage() {
   const { user } = useAuth();
@@ -107,6 +108,15 @@ export default function CertificatesPage() {
       } catch (err) {
         console.error('Database connection error:', err);
       }
+    }
+
+    // 3. Dispatch automated SMS confirmation receipt via Semaphore Gateway
+    try {
+      if (contact && contact.trim()) {
+        notifyCertificateSubmitted(contact, newId, getDocName(certType), name);
+      }
+    } catch (smsErr) {
+      console.warn('SMS dispatch error:', smsErr);
     }
 
     setRequests([newReq, ...requests]);

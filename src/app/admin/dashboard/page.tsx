@@ -40,6 +40,7 @@ import { Complaint, CertificateRequest, BlotterRecord, BarangayProject, TanodSch
 import { supabase, isSupabaseConfigured } from '@/lib/supabase/client';
 import { useAuth, UserProfile } from '@/context/AuthContext';
 import { useRouter } from 'next/navigation';
+import { notifyComplaintAssigned, notifyCertificateReady, getStoredSmsLogs, DispatchedSms } from '@/lib/smsService';
 
 const LeafletMap = dynamic(() => import('@/components/Map/LeafletMap'), {
   ssr: false,
@@ -693,7 +694,19 @@ export default function AdminDashboardPage() {
         .eq('tracking_number', matched.tracking_number);
     }
 
-    setSuccessBanner(`Confirmed AI recommendation for ${id}. Routing assigned and resident notified via simulated SMS.`);
+    // Dispatch SMS notification via Semaphore Gateway
+    if (matched) {
+      const contactNumber = matched.resident_contact || '0917-555-0192';
+      notifyComplaintAssigned(
+        contactNumber,
+        matched.tracking_number,
+        assignedRole,
+        matched.priority,
+        matched.resident_name
+      );
+    }
+
+    setSuccessBanner(`Confirmed AI recommendation for ${matched?.tracking_number || id}. Routed to ${assignedRole} and dispatched SMS notification.`);
     setTimeout(() => setSuccessBanner(null), 4000);
   };
 
@@ -729,7 +742,19 @@ export default function AdminDashboardPage() {
         .eq('tracking_number', matched.tracking_number);
     }
 
-    setSuccessBanner(`Priority updated to ${newPriority} for ${id}.`);
+    // Dispatch SMS notification for override update
+    if (matched) {
+      const contactNumber = matched.resident_contact || '0917-555-0192';
+      notifyComplaintAssigned(
+        contactNumber,
+        matched.tracking_number,
+        matched.assigned_to || 'Assigned Kagawad',
+        newPriority,
+        matched.resident_name
+      );
+    }
+
+    setSuccessBanner(`Priority updated to ${newPriority} for ${matched?.tracking_number || id}. Dispatched SMS notification.`);
     setTimeout(() => setSuccessBanner(null), 4000);
   };
 
@@ -768,7 +793,18 @@ export default function AdminDashboardPage() {
         .eq('tracking_number', matched.tracking_number);
     }
 
-    setSuccessBanner(`Certificate ${id} approved! Marked as 'Ready for Pickup' and SMS notification sent.`);
+    // Dispatch SMS notification via Semaphore Gateway
+    if (matched) {
+      const contactNumber = matched.contact_number || '0917-555-0192';
+      notifyCertificateReady(
+        contactNumber,
+        matched.tracking_number,
+        matched.certificate_type,
+        matched.resident_name
+      );
+    }
+
+    setSuccessBanner(`Certificate ${matched?.tracking_number || id} approved! Marked as 'Ready for Pickup' and dispatched SMS.`);
     setTimeout(() => setSuccessBanner(null), 4000);
   };
 
