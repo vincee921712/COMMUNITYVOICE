@@ -96,6 +96,9 @@ export default function AdminDashboardPage() {
   const [projectTargetDate, setProjectTargetDate] = useState(new Date(Date.now() + 30 * 24 * 60 * 1000).toISOString().split('T')[0]);
   const [isSubmittingProject, setIsSubmittingProject] = useState(false);
 
+  // Certificate Printable Modal State
+  const [printingCert, setPrintingCert] = useState<CertificateRequest | null>(null);
+
   // Load complaints from localStorage and Supabase
   useEffect(() => {
     async function fetchComplaints() {
@@ -1124,6 +1127,17 @@ export default function AdminDashboardPage() {
                       {cert.status}
                     </span>
 
+                    {/* Print Official Certificate Button */}
+                    <button
+                      type="button"
+                      onClick={() => setPrintingCert(cert)}
+                      className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold px-2.5 py-1.5 rounded-lg text-xs flex items-center gap-1 cursor-pointer transition-colors"
+                      title="Generate Printable Certificate"
+                    >
+                      <Printer className="w-3.5 h-3.5 text-slate-500" />
+                      <span>Print Form</span>
+                    </button>
+
                     {cert.status !== 'Ready for Pickup' && (
                       <button
                         onClick={() => handleApproveCert(cert.id)}
@@ -1924,6 +1938,110 @@ export default function AdminDashboardPage() {
                   <p className="text-xs font-semibold text-slate-600">No blotter entries currently designated under SWDO referral.</p>
                 </div>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+      {/* PRINTABLE CERTIFICATE TEMPLATE MODAL */}
+      {printingCert && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto print:p-0 print:bg-white print:static">
+          <div className="bg-white rounded-3xl max-w-2xl w-full border border-slate-200 shadow-2xl p-6 sm:p-10 space-y-6 print:border-none print:shadow-none print:p-0">
+            {/* Modal Controls (Hidden when printing) */}
+            <div className="flex justify-between items-center pb-4 border-b border-slate-100 print:hidden">
+              <span className="font-bold text-xs uppercase tracking-wider text-slate-500">Official Document Print Preview</span>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => window.print()}
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-sm transition-all cursor-pointer"
+                >
+                  <Printer className="w-4 h-4" />
+                  <span>Print Certificate</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPrintingCert(null)}
+                  className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold cursor-pointer"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+
+            {/* Official Philippine Barangay Letterhead Header */}
+            <div className="text-center space-y-1 pb-4 border-b-2 border-slate-900">
+              <p className="text-[11px] font-semibold tracking-wider uppercase text-slate-600">Republic of the Philippines</p>
+              <p className="text-[11px] font-semibold tracking-wider uppercase text-slate-600">Province of Iloilo • City of Iloilo</p>
+              <h2 className="text-base sm:text-lg font-black tracking-tight text-slate-900 uppercase">
+                Office of the Punong Barangay
+              </h2>
+              <p className="text-xs font-bold text-blue-900 tracking-wide uppercase">
+                Barangay Hibao-an Sur, Mandurriao, Iloilo City
+              </p>
+            </div>
+
+            {/* Certificate Title */}
+            <div className="text-center pt-2 pb-4">
+              <h1 className="text-xl sm:text-2xl font-black uppercase tracking-wider text-slate-900 underline decoration-slate-400 underline-offset-8">
+                {printingCert.certificate_type === 'certificate_of_indigency' ? 'Certificate of Indigency' :
+                 printingCert.certificate_type === 'certificate_of_residency' ? 'Certificate of Residency' :
+                 'Barangay Clearance & Identification'}
+              </h1>
+              <span className="text-[10px] font-mono text-slate-500 mt-2 block">
+                Ref. No: <strong>{printingCert.tracking_number}</strong>
+              </span>
+            </div>
+
+            {/* Certificate Body Content */}
+            <div className="space-y-4 text-xs sm:text-sm text-slate-800 leading-relaxed text-justify">
+              <p>
+                <strong>TO WHOM IT MAY CONCERN:</strong>
+              </p>
+
+              {printingCert.certificate_type === 'certificate_of_indigency' ? (
+                <p>
+                  This is to certify that <strong>{printingCert.resident_name}</strong>, of legal age, Filipino, is a bona fide resident of Barangay Hibao-an Sur, Mandurriao, Iloilo City, and belongs to an indigent family of this community.
+                </p>
+              ) : (
+                <p>
+                  This is to certify that <strong>{printingCert.resident_name}</strong>, of legal age, Filipino, is a known bona fide resident of Barangay Hibao-an Sur, Mandurriao, Iloilo City, with known address and good moral standing in this locality.
+                </p>
+              )}
+
+              <p>
+                This certification is issued upon the request of the interested party for the purpose of: <strong className="uppercase font-bold underline">{printingCert.purpose}</strong>, and for whatever legal purposes it may serve best.
+              </p>
+
+              <p className="pt-2">
+                Issued this <strong>{new Date().toLocaleDateString('en-US', { day: 'numeric', month: 'long', year: 'numeric' })}</strong> at the Barangay Hall of Barangay Hibao-an Sur, Mandurriao, Iloilo City, Philippines.
+              </p>
+            </div>
+
+            {/* Signatures & Seals Block */}
+            <div className="pt-8 grid grid-cols-2 gap-8 text-xs">
+              <div className="text-left space-y-8">
+                <span className="text-[11px] text-slate-500 block">Applicant Signature:</span>
+                <div className="border-t border-slate-400 pt-1 w-48 text-[11px] font-semibold text-slate-700">
+                  {printingCert.resident_name}
+                </div>
+              </div>
+
+              <div className="text-right space-y-8">
+                <span className="text-[11px] text-slate-500 block">Approved & Signed by:</span>
+                <div className="border-t-2 border-slate-900 pt-1 text-xs">
+                  <strong className="block font-black text-slate-900 uppercase">
+                    HON. ROBERTO PEREZ
+                  </strong>
+                  <span className="text-[11px] text-slate-600 block">Punong Barangay</span>
+                  <span className="text-[10px] text-slate-400 block font-mono">Hibao-an Sur, Mandurriao</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Document Verification Footer */}
+            <div className="pt-4 border-t border-slate-200 text-[10px] text-slate-400 flex justify-between items-center">
+              <span>CommunityVoice Official Document • City of Iloilo</span>
+              <span>Barangay Dry Seal Required for Validity</span>
             </div>
           </div>
         </div>
