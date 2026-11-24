@@ -24,7 +24,9 @@ import {
   TrendingUp,
   Activity,
   Search,
-  Filter
+  Filter,
+  Baby,
+  HeartHandshake
 } from 'lucide-react';
 import { 
   INITIAL_COMPLAINTS, 
@@ -51,7 +53,7 @@ const LeafletMap = dynamic(() => import('@/components/Map/LeafletMap'), {
 export default function AdminDashboardPage() {
   const router = useRouter();
   const { user, loading: authLoading } = useAuth();
-  const [activeTab, setActiveTab] = useState<'complaints' | 'blotter' | 'certificates' | 'projects' | 'tanod' | 'analytics'>('complaints');
+  const [activeTab, setActiveTab] = useState<'complaints' | 'blotter' | 'certificates' | 'projects' | 'tanod' | 'analytics' | 'swdo'>('complaints');
   const [complaints, setComplaints] = useState<Complaint[]>(INITIAL_COMPLAINTS);
   const [certificates, setCertificates] = useState<CertificateRequest[]>(INITIAL_CERTIFICATES);
   const [blotterRecords, setBlotterRecords] = useState<BlotterRecord[]>(INITIAL_BLOTTER);
@@ -700,6 +702,17 @@ export default function AdminDashboardPage() {
             }`}
           >
             Analytics & Reports
+          </button>
+          <button
+            onClick={() => setActiveTab('swdo')}
+            className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 ${
+              activeTab === 'swdo' 
+                ? 'bg-rose-600 text-white shadow-sm font-bold' 
+                : 'text-rose-700 bg-rose-50 hover:bg-rose-100'
+            }`}
+          >
+            <Baby className="w-3.5 h-3.5" />
+            <span>SWDO Referrals ({complaints.filter(c => c.is_minor_flagged || c.category_id === 'minors').length + blotterRecords.filter(b => b.status === 'Referred to SWDO' || b.incident_type.toLowerCase().includes('minor') || b.incident_type.toLowerCase().includes('curfew')).length})</span>
           </button>
         </div>
       </div>
@@ -1727,6 +1740,149 @@ export default function AdminDashboardPage() {
                   ))}
                 </tbody>
               </table>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* TAB 7: DEDICATED SWDO REFERRALS (CASES INVOLVING MINORS) */}
+      {activeTab === 'swdo' && (
+        <div className="space-y-6">
+          {/* SWDO Special Jurisdiction Banner */}
+          <div className="bg-rose-50 border border-rose-200 rounded-2xl p-6 space-y-3">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="flex items-center space-x-2.5">
+                <div className="w-10 h-10 rounded-xl bg-rose-600 text-white flex items-center justify-center shadow-md shadow-rose-500/20">
+                  <Baby className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-rose-950 text-base">City Social Welfare & Development Office (SWDO) Protocol</h3>
+                  <p className="text-xs text-rose-700">Special Protection & Handling for Children in Conflict with the Law (CICL) and Minors</p>
+                </div>
+              </div>
+              <span className="px-3 py-1 bg-white border border-rose-300 text-rose-800 rounded-xl text-xs font-mono font-bold shadow-sm self-start sm:self-auto">
+                RA 9344 / RA 10173 Protected
+              </span>
+            </div>
+            <p className="text-xs text-rose-800/90 leading-relaxed bg-white/70 p-3 rounded-xl border border-rose-200/60">
+              Pursuant to the <strong>Juvenile Justice and Welfare Act (RA 9344)</strong> and the <strong>Data Privacy Act (RA 10173)</strong>, all community complaints and blotter records involving minors are quarantined from standard public processing, assigned directly to the <strong>SWDO Focal Officer & Punong Barangay</strong>, and flagged for social worker assessment rather than punitive detention.
+            </p>
+          </div>
+
+          {/* Online Complaints Involving Minors */}
+          <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm space-y-4">
+            <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+              <div>
+                <h4 className="font-bold text-slate-900 text-sm flex items-center gap-1.5">
+                  <ShieldCheck className="w-4 h-4 text-rose-600" />
+                  Flagged Online Incident Reports
+                </h4>
+                <p className="text-xs text-slate-500">Citizen submissions auto-flagged by AI or categorized under Minors & Child Welfare.</p>
+              </div>
+              <span className="text-xs font-mono bg-rose-50 text-rose-700 px-2.5 py-1 rounded-lg font-bold">
+                {complaints.filter(c => c.is_minor_flagged || c.category_id === 'minors').length} Active Flags
+              </span>
+            </div>
+
+            <div className="divide-y divide-slate-100 text-xs">
+              {complaints
+                .filter(c => c.is_minor_flagged || c.category_id === 'minors')
+                .map(c => (
+                  <div key={c.id} className="py-4 space-y-3">
+                    <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-2">
+                      <div>
+                        <div className="flex items-center space-x-2">
+                          <span className="font-mono text-xs font-bold text-rose-600">{c.tracking_number}</span>
+                          <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-rose-100 text-rose-800">
+                            SWDO Protocol Flagged
+                          </span>
+                        </div>
+                        <h5 className="font-bold text-slate-900 text-sm mt-1">{c.title}</h5>
+                        <p className="text-slate-500 text-[11px] mt-0.5">Reported on: {new Date(c.created_at).toLocaleString()}</p>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold ${
+                          c.is_staff_confirmed ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
+                        }`}>
+                          {c.is_staff_confirmed ? 'Assigned to SWDO Officer' : 'Pending SWDO Intake'}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="p-3 bg-slate-50 rounded-xl space-y-1.5 border border-slate-200/70">
+                      <p className="text-slate-700"><strong>Incident Details:</strong> {c.description}</p>
+                      <p className="text-rose-700 font-medium text-[11px]">
+                        <strong>AI Safeguard Note:</strong> {c.ai_justification || 'Case mentions underage individuals; automated priority flag for SWDO protocol.'}
+                      </p>
+                    </div>
+
+                    <div className="flex justify-between items-center text-[11px] text-slate-400 pt-1">
+                      <span>Assigned Authority: <strong className="text-slate-700">SWDO Focal Officer & Punong Barangay</strong></span>
+                      <span>Action: <strong>Social Worker Intervention / Family Counseling</strong></span>
+                    </div>
+                  </div>
+                ))}
+
+              {complaints.filter(c => c.is_minor_flagged || c.category_id === 'minors').length === 0 && (
+                <div className="py-8 text-center text-slate-400">
+                  <p className="text-xs font-semibold text-slate-600">No online complaints currently flagged for SWDO referral.</p>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Blotter Records Involving Minors / Curfew */}
+          <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm space-y-4">
+            <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+              <div>
+                <h4 className="font-bold text-slate-900 text-sm flex items-center gap-1.5">
+                  <BookOpen className="w-4 h-4 text-amber-600" />
+                  Blotter Entries Involving Minors & Curfew Violations
+                </h4>
+                <p className="text-xs text-slate-500">Walk-in blotter book entries routed to Barangay Council for the Protection of Children (BCPC).</p>
+              </div>
+              <span className="text-xs font-mono bg-amber-50 text-amber-800 px-2.5 py-1 rounded-lg font-bold">
+                {blotterRecords.filter(b => b.status === 'Referred to SWDO' || b.incident_type.toLowerCase().includes('minor') || b.incident_type.toLowerCase().includes('curfew')).length} Cases
+              </span>
+            </div>
+
+            <div className="divide-y divide-slate-100 text-xs">
+              {blotterRecords
+                .filter(b => b.status === 'Referred to SWDO' || b.incident_type.toLowerCase().includes('minor') || b.incident_type.toLowerCase().includes('curfew'))
+                .map(b => (
+                  <div key={b.id} className="py-4 space-y-2">
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <span className="font-mono text-blue-600 font-bold block">{b.blotter_entry_number}</span>
+                        <h5 className="font-bold text-slate-900 text-sm mt-0.5">{b.incident_type}</h5>
+                        <p className="text-slate-500">
+                          Location: <strong>{b.incident_location}</strong> • Date: {new Date(b.incident_date).toLocaleString()}
+                        </p>
+                      </div>
+                      <span className="px-2.5 py-1 rounded-full font-bold uppercase text-[10px] bg-rose-100 text-rose-800">
+                        {b.status}
+                      </span>
+                    </div>
+
+                    <div className="p-3 bg-slate-50 rounded-xl text-slate-700 border border-slate-200/70">
+                      <p><strong>Narrative:</strong> {b.narrative}</p>
+                      <p className="mt-1 text-slate-500 text-[11px]">
+                        Complainant: <strong>{b.complainant_name}</strong> • Respondent: <strong>{b.respondent_name}</strong>
+                      </p>
+                    </div>
+
+                    <div className="flex justify-between items-center text-[10px] text-slate-400 pt-1">
+                      <span>Assigned Officer: <strong className="text-blue-700">{b.assigned_personnel}</strong></span>
+                      <span>Protocol: <strong>Non-Custodial BCPC Diversion Program</strong></span>
+                    </div>
+                  </div>
+                ))}
+
+              {blotterRecords.filter(b => b.status === 'Referred to SWDO' || b.incident_type.toLowerCase().includes('minor') || b.incident_type.toLowerCase().includes('curfew')).length === 0 && (
+                <div className="py-8 text-center text-slate-400">
+                  <p className="text-xs font-semibold text-slate-600">No blotter entries currently designated under SWDO referral.</p>
+                </div>
+              )}
             </div>
           </div>
         </div>
