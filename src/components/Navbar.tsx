@@ -37,12 +37,16 @@ export default function Navbar() {
 
   const isLiveSms = process.env.NEXT_PUBLIC_SMS_MODE === 'live';
 
+  const isStaffOrOfficial = Boolean(
+    user && (user.role === 'staff' || user.role === 'official' || user.role === 'admin')
+  );
+
   const navLinks = [
     { href: '/', label: 'Overview', icon: Building2 },
     { href: '/report', label: 'File Concern', icon: PlusCircle },
     { href: '/track', label: 'Track Status', icon: Search },
     { href: '/certificates', label: 'Certificates', icon: FileText },
-    { href: '/map', label: 'Incident Map', icon: MapPin },
+    { href: '/map', label: isStaffOrOfficial ? 'Incident Map' : 'My Map', icon: MapPin },
     { href: '/admin/dashboard', label: 'Barangay Portal', icon: LayoutDashboard },
   ];
 

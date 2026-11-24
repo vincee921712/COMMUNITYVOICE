@@ -1,21 +1,27 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import dynamic from 'next/dynamic';
+import Link from 'next/link';
 import { 
   MapPin, 
   Filter, 
   Layers, 
   Flame, 
-  Navigation, 
   Eye, 
   Building2,
   CheckCircle2,
-  AlertTriangle
+  AlertTriangle,
+  ShieldCheck,
+  Lock,
+  PlusCircle,
+  UserCheck,
+  Info
 } from 'lucide-react';
 import { INITIAL_COMPLAINTS, INITIAL_PROJECTS, CATEGORIES } from '@/lib/mockData';
 import { Complaint, BarangayProject } from '@/lib/types';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase/client';
+import { useAuth } from '@/context/AuthContext';
 
 const LeafletMap = dynamic(() => import('@/components/Map/LeafletMap'), {
   ssr: false,
@@ -27,6 +33,7 @@ const LeafletMap = dynamic(() => import('@/components/Map/LeafletMap'), {
 });
 
 export default function MapPage() {
+  const { user } = useAuth();
   const [complaints, setComplaints] = useState<Complaint[]>(INITIAL_COMPLAINTS);
   const [projects, setProjects] = useState<BarangayProject[]>(INITIAL_PROJECTS);
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
@@ -35,6 +42,24 @@ export default function MapPage() {
   const [layerMode, setLayerMode] = useState<'all' | 'markers' | 'heatmap'>('all');
   const [mapCenter, setMapCenter] = useState<[number, number]>([10.7314, 122.5228]);
   const [mapZoom, setMapZoom] = useState<number>(15);
+  const [myTrackings, setMyTrackings] = useState<string[]>([]);
+
+  // Check if current user is an official or staff member
+  const isStaffOrOfficial = Boolean(
+    user && (user.role === 'staff' || user.role === 'official' || user.role === 'admin')
+  );
+
+  // Load tracking numbers submitted on this device / browser
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem('cv_my_tracking_numbers');
+      if (stored) {
+        setMyTrackings(JSON.parse(stored));
+      }
+    } catch {
+      setMyTrackings([]);
+    }
+  }, []);
 
   useEffect(() => {
     async function loadAllComplaints() {
@@ -108,8 +133,41 @@ export default function MapPage() {
     { label: 'Zone 4 (Perimeter)', coords: [10.7305, 122.5242] as [number, number], zoom: 16 },
   ];
 
-  // Filter complaints
-  const filteredComplaints = complaints.filter((c) => {
+  // RBAC Filter: Residents ONLY see their own complaints; Officials/Staff see all
+  const userScopedComplaints = useMemo(() => {
+    if (isStaffOrOfficial) {
+      return complaints;
+    }
+
+    const userName = user?.full_name?.toLowerCase().trim();
+    const userPhone = user?.phone_number?.replace(/\D/g, '');
+
+    return complaints.filter((c) => {
+      // 1. Matched by tracking codes created by this user
+      if (myTrackings.includes(c.tracking_number)) return true;
+
+      // 2. Matched by resident name
+      if (userName && c.resident_name && c.resident_name.toLowerCase().trim() === userName) {
+        return true;
+      }
+
+      // 3. Matched by phone number
+      if (userPhone && c.resident_contact) {
+        const cleanContact = c.resident_contact.replace(/\D/g, '');
+        if (cleanContact === userPhone) return true;
+      }
+
+      // 4. Default mock resident Maria Santos owns CV-2026-001
+      if (user?.email === 'resident@hibaoan.gov.ph' && c.tracking_number === 'CV-2026-001') {
+        return true;
+      }
+
+      return false;
+    });
+  }, [complaints, isStaffOrOfficial, user, myTrackings]);
+
+  // Apply UI category and priority filters
+  const filteredComplaints = userScopedComplaints.filter((c) => {
     if (selectedCategory !== 'all' && c.category_id !== selectedCategory) return false;
     if (selectedPriority !== 'all' && c.priority !== selectedPriority) return false;
     return true;
@@ -120,15 +178,33 @@ export default function MapPage() {
       {/* Page Title & Intro */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <div className="inline-flex items-center space-x-1.5 text-blue-700 bg-blue-50 px-2.5 py-0.5 rounded-full text-xs font-semibold mb-1">
-            <MapPin className="w-3.5 h-3.5" />
-            <span>Geospatial Intelligence • Barangay Hibao-an Sur</span>
+          <div className={`inline-flex items-center space-x-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold mb-1 ${
+            isStaffOrOfficial
+              ? 'text-blue-700 bg-blue-50'
+              : 'text-emerald-700 bg-emerald-50 border border-emerald-200'
+          }`}>
+            {isStaffOrOfficial ? (
+              <>
+                <MapPin className="w-3.5 h-3.5" />
+                <span>Geospatial Oversight • Barangay Hibao-an Sur</span>
+              </>
+            ) : (
+              <>
+                <Lock className="w-3.5 h-3.5 text-emerald-600" />
+                <span>Personal Resident Map • RA 10173 Privacy Protected</span>
+              </>
+            )}
           </div>
+
           <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
-            Community Incident & Heatmap Analytics
+            {isStaffOrOfficial
+              ? 'Community Incident & Heatmap Analytics'
+              : 'My Transactions & Community Projects Map'}
           </h1>
           <p className="text-slate-500 text-xs sm:text-sm mt-0.5">
-            Visualize recurring complaints, high-density hotspots, and public community investments in real time.
+            {isStaffOrOfficial
+              ? 'Full geospatial oversight of all community complaints, recurrence hotspots, and infrastructure projects.'
+              : 'View your submitted concerns, track their pin locations, and explore official barangay infrastructure projects.'}
           </p>
         </div>
 
@@ -149,6 +225,32 @@ export default function MapPage() {
           ))}
         </div>
       </div>
+
+      {/* Resident Privacy Banner */}
+      {!isStaffOrOfficial && (
+        <div className="p-4 bg-emerald-50/90 border border-emerald-200 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-emerald-950">
+          <div className="flex items-center space-x-2.5">
+            <div className="w-8 h-8 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0">
+              <ShieldCheck className="w-4 h-4" />
+            </div>
+            <div>
+              <p className="font-bold text-emerald-900">
+                Resident Privacy Protection Active (RA 10173 Data Privacy Act)
+              </p>
+              <p className="text-emerald-700 text-[11px] mt-0.5">
+                To protect citizen confidentiality, this map displays <strong>only your own filed reports</strong> ({userScopedComplaints.length}) and official public barangay projects ({projects.length}). Neighboring dispute reports and private blotters are strictly hidden.
+              </p>
+            </div>
+          </div>
+          <Link
+            href="/report"
+            className="self-start sm:self-center inline-flex items-center space-x-1 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold px-3.5 py-2 rounded-xl text-xs transition-all shadow-sm shrink-0"
+          >
+            <PlusCircle className="w-3.5 h-3.5" />
+            <span>File New Concern</span>
+          </Link>
+        </div>
+      )}
 
       {/* Control & Filter Toolbar */}
       <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-4 text-xs">
@@ -177,14 +279,14 @@ export default function MapPage() {
               className="rounded-lg border border-slate-200 px-2.5 py-1 bg-slate-50 focus:outline-none cursor-pointer"
             >
               <option value="all">All Priority Levels</option>
-              <option value="High">🔴 High Priority (Immediate Action)</option>
+              <option value="High">🔴 High Priority</option>
               <option value="Medium">🟡 Medium Priority</option>
               <option value="Low">🟢 Low Priority</option>
             </select>
           </div>
         </div>
 
-        {/* Right: Layer Mode Switches (Heatmap vs Markers) */}
+        {/* Right: Layer Mode Switches */}
         <div className="flex flex-wrap items-center gap-3">
           <div className="inline-flex rounded-lg bg-slate-100 p-0.5 border border-slate-200">
             <button
@@ -197,15 +299,6 @@ export default function MapPage() {
               <span>Pins & Heatmap</span>
             </button>
             <button
-              onClick={() => setLayerMode('heatmap')}
-              className={`px-3 py-1 rounded-md text-xs font-semibold flex items-center space-x-1 transition-all ${
-                layerMode === 'heatmap' ? 'bg-white text-orange-600 shadow-xs' : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              <Flame className="w-3.5 h-3.5 text-orange-500" />
-              <span>Heatmap Only</span>
-            </button>
-            <button
               onClick={() => setLayerMode('markers')}
               className={`px-3 py-1 rounded-md text-xs font-semibold flex items-center space-x-1 transition-all ${
                 layerMode === 'markers' ? 'bg-white text-blue-700 shadow-xs' : 'text-slate-600 hover:text-slate-900'
@@ -214,6 +307,17 @@ export default function MapPage() {
               <Eye className="w-3.5 h-3.5" />
               <span>Pins Only</span>
             </button>
+            {isStaffOrOfficial && (
+              <button
+                onClick={() => setLayerMode('heatmap')}
+                className={`px-3 py-1 rounded-md text-xs font-semibold flex items-center space-x-1 transition-all ${
+                  layerMode === 'heatmap' ? 'bg-white text-orange-600 shadow-xs' : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <Flame className="w-3.5 h-3.5 text-orange-500" />
+                <span>Heatmap Only</span>
+              </button>
+            )}
           </div>
 
           <label className="flex items-center space-x-1.5 cursor-pointer text-slate-700 font-semibold select-none">
@@ -223,10 +327,28 @@ export default function MapPage() {
               onChange={(e) => setShowProjects(e.target.checked)}
               className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
             />
-            <span>Show Projects</span>
+            <span>Show Barangay Projects</span>
           </label>
         </div>
       </div>
+
+      {/* Empty State for Residents with No Reports */}
+      {!isStaffOrOfficial && filteredComplaints.length === 0 && (
+        <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-slate-600">
+          <div className="flex items-center space-x-2">
+            <Info className="w-4 h-4 text-blue-600 shrink-0" />
+            <span>
+              You do not have any active complaints plotted on the map. You can still explore ongoing barangay projects below or submit a new concern.
+            </span>
+          </div>
+          <Link
+            href="/report"
+            className="text-blue-600 hover:text-blue-800 font-bold underline whitespace-nowrap"
+          >
+            File a Concern Now →
+          </Link>
+        </div>
+      )}
 
       {/* Main Map Container */}
       <div className="h-[620px] rounded-3xl overflow-hidden border border-slate-200 shadow-md">
@@ -245,11 +367,11 @@ export default function MapPage() {
         <div className="md:col-span-8 bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-4 text-xs text-slate-600">
           <div className="flex items-center space-x-2">
             <span className="w-3.5 h-3.5 rounded-full bg-red-500 border-2 border-white shadow"></span>
-            <span>High Priority (Safety / SWDO Minors)</span>
+            <span>High Priority ({isStaffOrOfficial ? 'Safety / Minors' : 'Your High Priority'})</span>
           </div>
           <div className="flex items-center space-x-2">
             <span className="w-3.5 h-3.5 rounded-full bg-amber-500 border-2 border-white shadow"></span>
-            <span>Medium Priority (Drainage / Roads)</span>
+            <span>Medium Priority ({isStaffOrOfficial ? 'Drainage / Roads' : 'Your Medium Priority'})</span>
           </div>
           <div className="flex items-center space-x-2">
             <span className="w-3.5 h-3.5 rounded-full bg-emerald-500 border-2 border-white shadow"></span>
@@ -257,16 +379,31 @@ export default function MapPage() {
           </div>
           <div className="flex items-center space-x-2">
             <span className="w-4 h-4 rounded-md bg-indigo-600 text-white flex items-center justify-center text-[10px] font-bold">P</span>
-            <span>Barangay Infrastructure Project</span>
+            <span>Public Barangay Project</span>
           </div>
         </div>
 
         {/* Hotspot Insight Note */}
-        <div className="md:col-span-4 bg-orange-50 border border-orange-200 p-4 rounded-2xl text-xs text-orange-950 flex items-start space-x-2">
-          <Flame className="w-4 h-4 text-orange-600 shrink-0 mt-0.5" />
-          <p className="leading-relaxed">
-            <strong>Hotspot Density:</strong> Warmer red/orange circles indicate higher frequency and severity of complaints. Officials can use this pattern to target proactive inspections.
-          </p>
+        <div className={`md:col-span-4 p-4 rounded-2xl text-xs flex items-start space-x-2 ${
+          isStaffOrOfficial
+            ? 'bg-orange-50 border border-orange-200 text-orange-950'
+            : 'bg-blue-50 border border-blue-200 text-blue-950'
+        }`}>
+          {isStaffOrOfficial ? (
+            <>
+              <Flame className="w-4 h-4 text-orange-600 shrink-0 mt-0.5" />
+              <p className="leading-relaxed">
+                <strong>Hotspot Density:</strong> Warmer red/orange circles indicate higher frequency and severity of complaints across Barangay Hibao-an Sur for tanod patrol dispatch.
+              </p>
+            </>
+          ) : (
+            <>
+              <ShieldCheck className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
+              <p className="leading-relaxed">
+                <strong>Your Location Pins:</strong> Click on any marker to inspect its tracking reference code and progress status. Other residents cannot view your location data.
+              </p>
+            </>
+          )}
         </div>
       </div>
     </div>

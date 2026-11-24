@@ -244,6 +244,13 @@ export default function ReportPage() {
       const list = stored ? JSON.parse(stored) : [];
       list.unshift(newComplaintRecord);
       localStorage.setItem('cv_custom_complaints', JSON.stringify(list));
+
+      // Also record in personal tracking list for resident map view
+      const myTrackings = JSON.parse(localStorage.getItem('cv_my_tracking_numbers') || '[]');
+      if (!myTrackings.includes(trackingCode)) {
+        myTrackings.unshift(trackingCode);
+        localStorage.setItem('cv_my_tracking_numbers', JSON.stringify(myTrackings));
+      }
     } catch (e) {
       console.warn('Local storage write note:', e);
     }
