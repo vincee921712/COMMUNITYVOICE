@@ -15,7 +15,14 @@ import {
   Building,
   CheckCircle2,
   RefreshCw,
-  MapPin
+  MapPin,
+  BarChart3,
+  Download,
+  Printer,
+  PieChart,
+  FileSpreadsheet,
+  TrendingUp,
+  Activity
 } from 'lucide-react';
 import { 
   INITIAL_COMPLAINTS, 
@@ -38,7 +45,7 @@ const LeafletMap = dynamic(() => import('@/components/Map/LeafletMap'), {
 });
 
 export default function AdminDashboardPage() {
-  const [activeTab, setActiveTab] = useState<'complaints' | 'blotter' | 'certificates' | 'projects' | 'tanod'>('complaints');
+  const [activeTab, setActiveTab] = useState<'complaints' | 'blotter' | 'certificates' | 'projects' | 'tanod' | 'analytics'>('complaints');
   const [complaints, setComplaints] = useState<Complaint[]>(INITIAL_COMPLAINTS);
   const [certificates, setCertificates] = useState<CertificateRequest[]>(INITIAL_CERTIFICATES);
   const [blotterRecords, setBlotterRecords] = useState<BlotterRecord[]>(INITIAL_BLOTTER);
@@ -438,6 +445,39 @@ export default function AdminDashboardPage() {
     setTimeout(() => setSuccessBanner(null), 4000);
   };
 
+  // Export Report as CSV (Compatible with Excel)
+  const handleExportCSV = () => {
+    const headers = ['Tracking Number', 'Title', 'Category', 'Priority', 'Status', 'Assigned To', 'Date Reported'];
+    const rows = complaints.map(c => [
+      `"${c.tracking_number}"`,
+      `"${c.title.replace(/"/g, '""')}"`,
+      `"${CATEGORIES.find(cat => cat.id === (c.ai_category_id || c.category_id))?.name || c.category_id}"`,
+      `"${c.priority}"`,
+      `"${c.status}"`,
+      `"${c.assigned_to || 'Unassigned'}"`,
+      `"${new Date(c.created_at).toLocaleDateString()}"`
+    ]);
+
+    const csvContent = 'data:text/csv;charset=utf-8,\uFEFF' 
+      + [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+    
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement('a');
+    link.setAttribute('href', encodedUri);
+    link.setAttribute('download', `CommunityVoice_Council_Report_${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+
+    setSuccessBanner('Official CSV Monthly Report exported successfully for Council review!');
+    setTimeout(() => setSuccessBanner(null), 4000);
+  };
+
+  // Export Report as Printable Council Summary (PDF Preview)
+  const handlePrintReport = () => {
+    window.print();
+  };
+
   // Human-in-the-Loop: Staff confirms AI recommendation
   const handleConfirmAI = async (id: string) => {
     const matched = complaints.find(c => c.id === id);
@@ -608,6 +648,14 @@ export default function AdminDashboardPage() {
             }`}
           >
             Patrol Dispatch & Tanod ({tanodSchedules.length})
+          </button>
+          <button
+            onClick={() => setActiveTab('analytics')}
+            className={`px-3 py-1.5 rounded-lg transition-all ${
+              activeTab === 'analytics' ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            Analytics & Reports
           </button>
         </div>
       </div>
@@ -1307,6 +1355,252 @@ export default function AdminDashboardPage() {
                   </div>
                 </div>
               ))}
+          </div>
+        </div>
+      )}
+      {/* TAB 6: ANALYTICS DASHBOARD & MONTHLY REPORT EXPORT */}
+      {activeTab === 'analytics' && (
+        <div className="space-y-6">
+          {/* Header & Export Actions Toolbar */}
+          <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div>
+              <div className="flex items-center space-x-2">
+                <BarChart3 className="w-5 h-5 text-blue-600" />
+                <h3 className="font-bold text-slate-900 text-base">Barangay Governance Analytics & Council Reporting</h3>
+              </div>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Comprehensive performance metrics, category distribution, resolution tracking, and DILG/Sangguniang Barangay export.
+              </p>
+            </div>
+
+            {/* Export Buttons */}
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleExportCSV}
+                className="inline-flex items-center space-x-1.5 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-semibold shadow-sm transition-all cursor-pointer"
+              >
+                <FileSpreadsheet className="w-4 h-4" />
+                <span>Export CSV (Excel)</span>
+              </button>
+              <button
+                type="button"
+                onClick={handlePrintReport}
+                className="inline-flex items-center space-x-1.5 px-3.5 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-semibold shadow-sm transition-all cursor-pointer"
+              >
+                <Printer className="w-4 h-4" />
+                <span>Print / Save PDF</span>
+              </button>
+            </div>
+          </div>
+
+          {/* High-Level Council KPI Overview */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 text-xs">
+            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-2">
+              <div className="flex justify-between items-center text-slate-500">
+                <span className="font-semibold uppercase tracking-wider text-[10px]">Total Recorded Incidents</span>
+                <Activity className="w-4 h-4 text-blue-600" />
+              </div>
+              <div className="text-2xl font-black text-slate-900">{complaints.length + blotterRecords.length}</div>
+              <p className="text-[11px] text-slate-400">
+                {complaints.length} Online Complaints • {blotterRecords.length} Walk-in Blotters
+              </p>
+            </div>
+
+            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-2">
+              <div className="flex justify-between items-center text-slate-500">
+                <span className="font-semibold uppercase tracking-wider text-[10px]">High-Priority Hazard Index</span>
+                <AlertTriangle className="w-4 h-4 text-rose-500" />
+              </div>
+              <div className="text-2xl font-black text-rose-600">
+                {complaints.filter(c => c.priority === 'High').length} Urgent Cases
+              </div>
+              <p className="text-[11px] text-slate-400">
+                Immediate dispatch to Kagawad / BPSO
+              </p>
+            </div>
+
+            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-2">
+              <div className="flex justify-between items-center text-slate-500">
+                <span className="font-semibold uppercase tracking-wider text-[10px]">Resolution & Routing Rate</span>
+                <TrendingUp className="w-4 h-4 text-emerald-600" />
+              </div>
+              <div className="text-2xl font-black text-emerald-600">
+                {complaints.length > 0 
+                  ? Math.round((complaints.filter(c => c.is_staff_confirmed).length / complaints.length) * 100)
+                  : 100}%
+              </div>
+              <p className="text-[11px] text-slate-400">
+                {complaints.filter(c => c.is_staff_confirmed).length} Assigned or Settled
+              </p>
+            </div>
+
+            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-2">
+              <div className="flex justify-between items-center text-slate-500">
+                <span className="font-semibold uppercase tracking-wider text-[10px]">Document Requests Processed</span>
+                <FileCheck className="w-4 h-4 text-indigo-600" />
+              </div>
+              <div className="text-2xl font-black text-indigo-600">
+                {certificates.filter(c => c.status === 'Ready for Pickup').length} / {certificates.length}
+              </div>
+              <p className="text-[11px] text-slate-400">
+                Indigency, Residency, Barangay IDs
+              </p>
+            </div>
+          </div>
+
+          {/* Detailed Analytical Breakdown */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 text-xs">
+            {/* Category Breakdown Progress Bars */}
+            <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                <h4 className="font-bold text-slate-900 text-sm flex items-center gap-1.5">
+                  <PieChart className="w-4 h-4 text-blue-600" />
+                  Incident Volume by Category
+                </h4>
+                <span className="text-[11px] text-slate-400">Hibao-an Sur Service Portals</span>
+              </div>
+
+              <div className="space-y-3 pt-1">
+                {CATEGORIES.map(cat => {
+                  const count = complaints.filter(c => (c.ai_category_id || c.category_id) === cat.id).length;
+                  const percentage = complaints.length > 0 ? Math.round((count / complaints.length) * 100) : 0;
+                  return (
+                    <div key={cat.id} className="space-y-1">
+                      <div className="flex justify-between items-center text-xs">
+                        <span className="font-semibold text-slate-700">{cat.name}</span>
+                        <span className="text-slate-500 font-mono">{count} ({percentage}%)</span>
+                      </div>
+                      <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
+                        <div 
+                          className={`h-full rounded-full transition-all duration-500 ${
+                            cat.id === 'peace_order' ? 'bg-amber-500' :
+                            cat.id === 'sanitation' ? 'bg-emerald-500' :
+                            cat.id === 'utilities' ? 'bg-indigo-500' :
+                            cat.id === 'infrastructure' ? 'bg-cyan-500' :
+                            cat.id === 'minors' ? 'bg-rose-500' : 'bg-blue-500'
+                          }`}
+                          style={{ width: `${Math.max(percentage, 3)}%` }}
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Priority & Safeguards Compliance */}
+            <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                <h4 className="font-bold text-slate-900 text-sm flex items-center gap-1.5">
+                  <ShieldCheck className="w-4 h-4 text-emerald-600" />
+                  Priority Levels & Citizen Safeguards
+                </h4>
+                <span className="text-[11px] text-slate-400">RA 10173 & SWDO Protocol</span>
+              </div>
+
+              <div className="grid grid-cols-3 gap-3 text-center">
+                <div className="p-3 rounded-xl bg-rose-50 border border-rose-200/80">
+                  <span className="block text-rose-800 font-extrabold text-xl">
+                    {complaints.filter(c => c.priority === 'High').length}
+                  </span>
+                  <span className="text-[10px] uppercase font-bold text-rose-600">High Priority</span>
+                </div>
+                <div className="p-3 rounded-xl bg-amber-50 border border-amber-200/80">
+                  <span className="block text-amber-800 font-extrabold text-xl">
+                    {complaints.filter(c => c.priority === 'Medium').length}
+                  </span>
+                  <span className="text-[10px] uppercase font-bold text-amber-600">Medium Priority</span>
+                </div>
+                <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200/80">
+                  <span className="block text-emerald-800 font-extrabold text-xl">
+                    {complaints.filter(c => c.priority === 'Low').length}
+                  </span>
+                  <span className="text-[10px] uppercase font-bold text-emerald-600">Low Priority</span>
+                </div>
+              </div>
+
+              <div className="p-3.5 bg-slate-50 rounded-xl space-y-2 border border-slate-200">
+                <span className="text-[11px] font-bold text-slate-700 block uppercase tracking-wider">
+                  Special Protocols Logged:
+                </span>
+                <div className="flex justify-between items-center text-xs">
+                  <span className="text-slate-600">Minor-Flagged Cases (SWDO Protocol):</span>
+                  <strong className="text-rose-600 font-mono">
+                    {complaints.filter(c => c.is_minor_flagged).length} Cases
+                  </strong>
+                </div>
+                <div className="flex justify-between items-center text-xs">
+                  <span className="text-slate-600">Duplicate Incident Safeguards Triggered:</span>
+                  <strong className="text-blue-600 font-mono">
+                    {complaints.filter(c => c.is_duplicate_flagged).length} Cases
+                  </strong>
+                </div>
+                <div className="flex justify-between items-center text-xs">
+                  <span className="text-slate-600">Staff AI Confirmations / Overrides:</span>
+                  <strong className="text-emerald-700 font-mono">
+                    {complaints.filter(c => c.is_staff_confirmed).length} Reviewed
+                  </strong>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Sangguniang Barangay Council Summary Table */}
+          <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm space-y-4">
+            <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+              <div>
+                <h4 className="font-bold text-slate-900 text-sm">Monthly Incident Log for Council Meeting</h4>
+                <p className="text-xs text-slate-500">Official log sheet generated for Punong Barangay & Kagawad review.</p>
+              </div>
+              <span className="text-xs font-mono bg-slate-100 px-2 py-1 rounded text-slate-600">
+                Total Records: {complaints.length}
+              </span>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs text-slate-700">
+                <thead>
+                  <tr className="border-b border-slate-200 text-slate-400 uppercase text-[10px]">
+                    <th className="py-2.5 px-3">Tracking #</th>
+                    <th className="py-2.5 px-3">Incident Title</th>
+                    <th className="py-2.5 px-3">Category</th>
+                    <th className="py-2.5 px-3">Priority</th>
+                    <th className="py-2.5 px-3">Assigned Committee</th>
+                    <th className="py-2.5 px-3">Status</th>
+                    <th className="py-2.5 px-3">Date</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {complaints.map(c => (
+                    <tr key={c.id} className="hover:bg-slate-50/80 transition-colors">
+                      <td className="py-2.5 px-3 font-mono font-bold text-blue-600">{c.tracking_number}</td>
+                      <td className="py-2.5 px-3 font-semibold text-slate-900 max-w-xs truncate">{c.title}</td>
+                      <td className="py-2.5 px-3 text-slate-600">
+                        {CATEGORIES.find(cat => cat.id === (c.ai_category_id || c.category_id))?.name || c.category_id}
+                      </td>
+                      <td className="py-2.5 px-3">
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                          c.priority === 'High' ? 'bg-rose-100 text-rose-800' :
+                          c.priority === 'Medium' ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800'
+                        }`}>
+                          {c.priority}
+                        </span>
+                      </td>
+                      <td className="py-2.5 px-3 text-slate-600 font-medium">
+                        {c.assigned_to || 'Barangay Staff'}
+                      </td>
+                      <td className="py-2.5 px-3">
+                        <span className="font-semibold text-slate-800">{c.status}</span>
+                      </td>
+                      <td className="py-2.5 px-3 text-slate-400 text-[11px]">
+                        {new Date(c.created_at).toLocaleDateString()}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       )}
