@@ -217,34 +217,52 @@ export default function CertificatesPage() {
           </div>
 
           <div className="space-y-3">
-            {requests.map((r) => (
-              <div key={r.id} className="p-4 bg-white rounded-2xl border border-slate-200 shadow-sm space-y-2 text-xs">
-                <div className="flex justify-between items-start">
-                  <div>
-                    <span className="font-mono text-[10px] text-blue-600 font-bold block">{r.tracking_number}</span>
-                    <h4 className="font-bold text-slate-900 text-sm">{getDocName(r.certificate_type)}</h4>
-                    <p className="text-slate-500">Applicant: <strong>{r.resident_name}</strong></p>
+            {requests.map((r) => {
+              const diffHours = (Date.now() - new Date(r.created_at).getTime()) / (1000 * 60 * 60);
+              const isOverdue = r.status !== 'Ready for Pickup' && r.status !== 'Released' && diffHours >= 48;
+              const isApproaching = r.status !== 'Ready for Pickup' && r.status !== 'Released' && diffHours >= 24 && diffHours < 48;
+
+              return (
+                <div key={r.id} className="p-4 bg-white rounded-2xl border border-slate-200 shadow-sm space-y-2 text-xs">
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <div className="flex items-center space-x-2">
+                        <span className="font-mono text-[10px] text-blue-600 font-bold block">{r.tracking_number}</span>
+                        {isOverdue && (
+                          <span className="px-1.5 py-0.5 rounded text-[9px] bg-rose-100 text-rose-800 font-bold border border-rose-300 flex items-center gap-0.5">
+                            <Clock className="w-2.5 h-2.5" /> Overdue (&gt;48h)
+                          </span>
+                        )}
+                        {isApproaching && (
+                          <span className="px-1.5 py-0.5 rounded text-[9px] bg-amber-100 text-amber-900 font-semibold border border-amber-300 flex items-center gap-0.5">
+                            <Clock className="w-2.5 h-2.5" /> Processing (&gt;24h)
+                          </span>
+                        )}
+                      </div>
+                      <h4 className="font-bold text-slate-900 text-sm mt-0.5">{getDocName(r.certificate_type)}</h4>
+                      <p className="text-slate-500">Applicant: <strong>{r.resident_name}</strong></p>
+                    </div>
+                    <span className={`px-2 py-0.5 rounded font-bold text-[10px] uppercase ${
+                      r.status === 'Ready for Pickup' ? 'bg-emerald-100 text-emerald-800' :
+                      r.status === 'For Approval' ? 'bg-blue-100 text-blue-800' :
+                      'bg-amber-100 text-amber-800'
+                    }`}>
+                      {r.status}
+                    </span>
                   </div>
-                  <span className={`px-2 py-0.5 rounded font-bold text-[10px] uppercase ${
-                    r.status === 'Ready for Pickup' ? 'bg-emerald-100 text-emerald-800' :
-                    r.status === 'For Approval' ? 'bg-blue-100 text-blue-800' :
-                    'bg-amber-100 text-amber-800'
-                  }`}>
-                    {r.status}
-                  </span>
-                </div>
 
-                <div className="p-2.5 bg-slate-50 rounded-lg text-slate-600">
-                  <span className="text-[11px] block"><strong>Purpose:</strong> {r.purpose}</span>
-                  {r.remarks && <span className="text-[11px] text-blue-700 block mt-0.5">ℹ️ {r.remarks}</span>}
-                </div>
+                  <div className="p-2.5 bg-slate-50 rounded-lg text-slate-600">
+                    <span className="text-[11px] block"><strong>Purpose:</strong> {r.purpose}</span>
+                    {r.remarks && <span className="text-[11px] text-blue-700 block mt-0.5">ℹ️ {r.remarks}</span>}
+                  </div>
 
-                <div className="flex justify-between items-center text-[10px] text-slate-400 pt-1">
-                  <span>Contact: {r.contact_number}</span>
-                  <span>{new Date(r.created_at).toLocaleDateString()}</span>
+                  <div className="flex justify-between items-center text-[10px] text-slate-400 pt-1">
+                    <span>Contact: {r.contact_number}</span>
+                    <span>{new Date(r.created_at).toLocaleDateString()}</span>
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       </div>

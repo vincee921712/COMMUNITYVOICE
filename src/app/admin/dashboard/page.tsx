@@ -490,6 +490,36 @@ export default function AdminDashboardPage() {
     window.print();
   };
 
+  // Helper to compute SLA duration and status
+  const getSLAInfo = (createdAt: string, status: string) => {
+    if (status === 'Ready for Pickup' || status === 'Released') {
+      return { isBreached: false, isWarning: false, label: 'Completed SLA', color: 'bg-emerald-50 text-emerald-700 border-emerald-200' };
+    }
+    const diffHours = (Date.now() - new Date(createdAt).getTime()) / (1000 * 60 * 60);
+    if (diffHours >= 48) {
+      return { 
+        isBreached: true, 
+        isWarning: false, 
+        label: `SLA Breached (>48h: ${Math.round(diffHours)}h elapsed)`, 
+        color: 'bg-rose-100 text-rose-800 border-rose-300 font-bold animate-pulse' 
+      };
+    }
+    if (diffHours >= 24) {
+      return { 
+        isBreached: false, 
+        isWarning: true, 
+        label: `Approaching SLA (${Math.round(diffHours)}h / 48h)`, 
+        color: 'bg-amber-100 text-amber-900 border-amber-300 font-semibold' 
+      };
+    }
+    return { 
+      isBreached: false, 
+      isWarning: false, 
+      label: `Within Target SLA (${Math.round(diffHours)}h elapsed)`, 
+      color: 'bg-slate-100 text-slate-600 border-slate-200' 
+    };
+  };
+
   // Human-in-the-Loop: Staff confirms AI recommendation
   const handleConfirmAI = async (id: string) => {
     const matched = complaints.find(c => c.id === id);
@@ -1068,33 +1098,44 @@ export default function AdminDashboardPage() {
           </div>
 
           <div className="divide-y divide-slate-100 text-xs">
-            {certificates.map((cert) => (
-              <div key={cert.id} className="py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                <div>
-                  <span className="font-mono text-blue-600 font-bold text-[10px]">{cert.tracking_number}</span>
-                  <h4 className="font-bold text-slate-900 text-sm uppercase">{cert.certificate_type.replace(/_/g, ' ')}</h4>
-                  <p className="text-slate-600">Applicant: <strong>{cert.resident_name}</strong> • Contact: {cert.contact_number}</p>
-                  <p className="text-slate-500 text-[11px] mt-0.5">Purpose: {cert.purpose}</p>
-                </div>
+            {certificates.map((cert) => {
+              const sla = getSLAInfo(cert.created_at, cert.status);
+              return (
+                <div key={cert.id} className="py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div>
+                    <div className="flex items-center space-x-2">
+                      <span className="font-mono text-blue-600 font-bold text-[10px]">{cert.tracking_number}</span>
+                      {/* Processing-Time SLA Monitor Badge */}
+                      <span className={`px-2 py-0.5 rounded-md border text-[9px] uppercase tracking-wider flex items-center gap-1 ${sla.color}`}>
+                        <Clock className="w-2.5 h-2.5" />
+                        <span>{sla.label}</span>
+                      </span>
+                    </div>
+                    <h4 className="font-bold text-slate-900 text-sm uppercase mt-0.5">{cert.certificate_type.replace(/_/g, ' ')}</h4>
+                    <p className="text-slate-600">Applicant: <strong>{cert.resident_name}</strong> • Contact: {cert.contact_number}</p>
+                    <p className="text-slate-500 text-[11px] mt-0.5">Purpose: {cert.purpose}</p>
+                    <p className="text-slate-400 text-[10px] mt-0.5">Submitted: {new Date(cert.created_at).toLocaleString()}</p>
+                  </div>
 
-                <div className="flex items-center gap-2">
-                  <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold ${
-                    cert.status === 'Ready for Pickup' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
-                  }`}>
-                    {cert.status}
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold ${
+                      cert.status === 'Ready for Pickup' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
+                    }`}>
+                      {cert.status}
+                    </span>
 
-                  {cert.status !== 'Ready for Pickup' && (
-                    <button
-                      onClick={() => handleApproveCert(cert.id)}
-                      className="bg-blue-600 hover:bg-blue-700 text-white font-semibold px-3 py-1.5 rounded-lg text-xs"
-                    >
-                      Approve Document
-                    </button>
-                  )}
+                    {cert.status !== 'Ready for Pickup' && (
+                      <button
+                        onClick={() => handleApproveCert(cert.id)}
+                        className="bg-blue-600 hover:bg-blue-700 text-white font-semibold px-3 py-1.5 rounded-lg text-xs cursor-pointer"
+                      >
+                        Approve Document
+                      </button>
+                    )}
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}
