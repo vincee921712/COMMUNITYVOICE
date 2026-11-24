@@ -22,7 +22,9 @@ import {
   PieChart,
   FileSpreadsheet,
   TrendingUp,
-  Activity
+  Activity,
+  Search,
+  Filter
 } from 'lucide-react';
 import { 
   INITIAL_COMPLAINTS, 
@@ -66,6 +68,10 @@ export default function AdminDashboardPage() {
   const [assignedPersonnel, setAssignedPersonnel] = useState('Kagawad on Peace & Order');
   const [narrative, setNarrative] = useState('');
   const [isSubmittingBlotter, setIsSubmittingBlotter] = useState(false);
+
+  // Blotter Search & Filter State
+  const [blotterSearchQuery, setBlotterSearchQuery] = useState('');
+  const [blotterStatusFilter, setBlotterStatusFilter] = useState<'All' | 'Active' | 'Under Investigation' | 'Referred to SWDO' | 'Settled' | 'Closed'>('All');
 
   // Tanod Schedule Encoder & Dispatch State
   const [showTanodForm, setShowTanodForm] = useState(false);
@@ -923,34 +929,117 @@ export default function AdminDashboardPage() {
             </form>
           )}
 
+          {/* Search & Status Filter Toolbar */}
+          <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200 flex flex-col md:flex-row gap-3 items-center justify-between text-xs">
+            {/* Search Input */}
+            <div className="relative w-full md:w-96">
+              <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                value={blotterSearchQuery}
+                onChange={(e) => setBlotterSearchQuery(e.target.value)}
+                placeholder="Search blotter #, complainant, respondent, or keyword..."
+                className="w-full pl-10 pr-3.5 py-2 text-xs rounded-xl border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 shadow-inner"
+              />
+              {blotterSearchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setBlotterSearchQuery('')}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs font-bold px-1"
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+
+            {/* Status Filter Buttons */}
+            <div className="flex flex-wrap items-center gap-1.5 w-full md:w-auto">
+              {(['All', 'Active', 'Under Investigation', 'Referred to SWDO', 'Settled', 'Closed'] as const).map((status) => (
+                <button
+                  key={status}
+                  onClick={() => setBlotterStatusFilter(status)}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all ${
+                    blotterStatusFilter === status
+                      ? 'bg-blue-600 text-white shadow-sm'
+                      : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'
+                  }`}
+                >
+                  {status}
+                </button>
+              ))}
+            </div>
+          </div>
+
           {/* Blotter Records List */}
           <div className="divide-y divide-slate-100 text-xs">
-            {blotterRecords.map((b) => (
-              <div key={b.id} className="py-4 space-y-2">
-                <div className="flex justify-between items-start">
-                  <div>
-                    <span className="font-mono text-blue-600 font-bold block">{b.blotter_entry_number}</span>
-                    <h4 className="font-bold text-slate-900 text-sm mt-0.5">{b.incident_type}</h4>
-                    <p className="text-slate-500">
-                      Location: <strong>{b.incident_location}</strong> • Date: {new Date(b.incident_date).toLocaleString()}
+            {blotterRecords
+              .filter((b) => {
+                // Status Filter
+                if (blotterStatusFilter !== 'All' && b.status !== blotterStatusFilter) {
+                  return false;
+                }
+                // Search Query Filter
+                if (blotterSearchQuery.trim()) {
+                  const q = blotterSearchQuery.toLowerCase();
+                  const matchEntry = b.blotter_entry_number.toLowerCase().includes(q);
+                  const matchComplainant = b.complainant_name.toLowerCase().includes(q);
+                  const matchRespondent = (b.respondent_name || '').toLowerCase().includes(q);
+                  const matchType = b.incident_type.toLowerCase().includes(q);
+                  const matchLocation = b.incident_location.toLowerCase().includes(q);
+                  const matchNarrative = b.narrative.toLowerCase().includes(q);
+                  return matchEntry || matchComplainant || matchRespondent || matchType || matchLocation || matchNarrative;
+                }
+                return true;
+              })
+              .map((b) => (
+                <div key={b.id} className="py-4 space-y-2">
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <span className="font-mono text-blue-600 font-bold block">{b.blotter_entry_number}</span>
+                      <h4 className="font-bold text-slate-900 text-sm mt-0.5">{b.incident_type}</h4>
+                      <p className="text-slate-500">
+                        Location: <strong>{b.incident_location}</strong> • Date: {new Date(b.incident_date).toLocaleString()}
+                      </p>
+                    </div>
+                    <span className={`px-2 py-0.5 rounded font-bold uppercase text-[10px] ${
+                      b.status === 'Settled' ? 'bg-emerald-100 text-emerald-800' :
+                      b.status === 'Referred to SWDO' ? 'bg-amber-100 text-amber-800' :
+                      'bg-slate-100 text-slate-700'
+                    }`}>
+                      {b.status}
+                    </span>
+                  </div>
+                  <div className="p-3 bg-slate-50 rounded-xl text-slate-700">
+                    <p><strong>Narrative:</strong> {b.narrative}</p>
+                    <p className="mt-1 text-slate-500 text-[11px]">
+                      Complainant: <strong>{b.complainant_name}</strong> • Respondent: <strong>{b.respondent_name}</strong> • Assigned: <strong className="text-blue-700">{b.assigned_personnel}</strong>
                     </p>
                   </div>
-                  <span className={`px-2 py-0.5 rounded font-bold uppercase text-[10px] ${
-                    b.status === 'Settled' ? 'bg-emerald-100 text-emerald-800' :
-                    b.status === 'Referred to SWDO' ? 'bg-amber-100 text-amber-800' :
-                    'bg-slate-100 text-slate-700'
-                  }`}>
-                    {b.status}
-                  </span>
                 </div>
-                <div className="p-3 bg-slate-50 rounded-xl text-slate-700">
-                  <p><strong>Narrative:</strong> {b.narrative}</p>
-                  <p className="mt-1 text-slate-500 text-[11px]">
-                    Complainant: <strong>{b.complainant_name}</strong> • Respondent: <strong>{b.respondent_name}</strong> • Assigned: <strong className="text-blue-700">{b.assigned_personnel}</strong>
-                  </p>
-                </div>
+              ))}
+
+            {/* Empty Search Fallback */}
+            {blotterRecords.filter((b) => {
+              if (blotterStatusFilter !== 'All' && b.status !== blotterStatusFilter) return false;
+              if (blotterSearchQuery.trim()) {
+                const q = blotterSearchQuery.toLowerCase();
+                return (
+                  b.blotter_entry_number.toLowerCase().includes(q) ||
+                  b.complainant_name.toLowerCase().includes(q) ||
+                  (b.respondent_name || '').toLowerCase().includes(q) ||
+                  b.incident_type.toLowerCase().includes(q) ||
+                  b.incident_location.toLowerCase().includes(q) ||
+                  b.narrative.toLowerCase().includes(q)
+                );
+              }
+              return true;
+            }).length === 0 && (
+              <div className="py-12 text-center text-slate-400 space-y-2">
+                <Search className="w-8 h-8 mx-auto text-slate-300" />
+                <p className="text-xs font-semibold text-slate-600">No blotter entries matching &quot;{blotterSearchQuery}&quot;</p>
+                <p className="text-[11px]">Try adjusting your search terms or status filter.</p>
               </div>
-            ))}
+            )}
           </div>
         </div>
       )}
