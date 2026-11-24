@@ -36,9 +36,9 @@ import {
   INITIAL_PROJECTS,
   CATEGORIES 
 } from '@/lib/mockData';
-import { Complaint, CertificateRequest, BlotterRecord, BarangayProject, TanodSchedule } from '@/lib/types';
+import { Complaint, CertificateRequest, BlotterRecord, BarangayProject, TanodSchedule, UserRole } from '@/lib/types';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase/client';
-import { useAuth } from '@/context/AuthContext';
+import { useAuth, UserProfile } from '@/context/AuthContext';
 import { useRouter } from 'next/navigation';
 
 const LeafletMap = dynamic(() => import('@/components/Map/LeafletMap'), {
@@ -53,7 +53,7 @@ const LeafletMap = dynamic(() => import('@/components/Map/LeafletMap'), {
 export default function AdminDashboardPage() {
   const router = useRouter();
   const { user, loading: authLoading } = useAuth();
-  const [activeTab, setActiveTab] = useState<'complaints' | 'blotter' | 'certificates' | 'projects' | 'tanod' | 'analytics' | 'swdo'>('complaints');
+  const [activeTab, setActiveTab] = useState<'complaints' | 'blotter' | 'certificates' | 'projects' | 'tanod' | 'analytics' | 'swdo' | 'users'>('complaints');
   const [complaints, setComplaints] = useState<Complaint[]>(INITIAL_COMPLAINTS);
   const [certificates, setCertificates] = useState<CertificateRequest[]>(INITIAL_CERTIFICATES);
   const [blotterRecords, setBlotterRecords] = useState<BlotterRecord[]>(INITIAL_BLOTTER);
@@ -98,6 +98,16 @@ export default function AdminDashboardPage() {
 
   // Certificate Printable Modal State
   const [printingCert, setPrintingCert] = useState<CertificateRequest | null>(null);
+
+  // User Accounts Management State
+  const [userAccounts, setUserAccounts] = useState<UserProfile[]>([]);
+  const [showAddUserModal, setShowAddUserModal] = useState(false);
+  const [newUserName, setNewUserName] = useState('');
+  const [newUserEmail, setNewUserEmail] = useState('');
+  const [newUserPhone, setNewUserPhone] = useState('');
+  const [newUserRole, setNewUserRole] = useState<UserRole>('resident');
+  const [newUserAddress, setNewUserAddress] = useState('Zone 1, Hibao-an Sur, Iloilo City');
+  const [userSearchQuery, setUserSearchQuery] = useState('');
 
   // Load complaints from localStorage and Supabase
   useEffect(() => {
@@ -294,6 +304,130 @@ export default function AdminDashboardPage() {
 
     fetchTanodSchedules();
   }, []);
+
+  // Load User Accounts from localStorage and Supabase
+  useEffect(() => {
+    async function loadAccounts() {
+      const defaultUsers: UserProfile[] = [
+        {
+          id: 'usr-off-01',
+          email: 'captain@hibaoan.gov.ph',
+          full_name: 'Hon. Punong Barangay Roberto Perez',
+          role: 'official',
+          phone_number: '0918-333-4455',
+          address: 'Barangay Hall, Hibao-an Sur'
+        },
+        {
+          id: 'usr-stf-01',
+          email: 'secretary@hibaoan.gov.ph',
+          full_name: 'Barangay Secretary Elena Ramos',
+          role: 'staff',
+          phone_number: '0920-111-2233',
+          address: 'Barangay Hall, Hibao-an Sur'
+        },
+        {
+          id: 'usr-res-01',
+          email: 'resident@hibaoan.gov.ph',
+          full_name: 'Maria Santos',
+          role: 'resident',
+          phone_number: '0917-555-0192',
+          address: 'Zone 3, Hibao-an Sur, Iloilo City'
+        }
+      ];
+
+      let combined: UserProfile[] = [...defaultUsers];
+
+      // Read registered residents in localStorage
+      try {
+        const stored = localStorage.getItem('cv_registered_users');
+        if (stored) {
+          const dict: Record<string, UserProfile> = JSON.parse(stored);
+          const locals = Object.values(dict);
+          const existingEmails = new Set(combined.map(u => u.email.toLowerCase()));
+          const filtered = locals.filter(u => !existingEmails.has(u.email.toLowerCase()));
+          combined = [...combined, ...filtered];
+        }
+      } catch (err) {
+        console.warn('Could not read registered users from localStorage:', err);
+      }
+
+      // Read profiles from Supabase if configured
+      if (isSupabaseConfigured && supabase) {
+        try {
+          const { data } = await supabase.from('profiles').select('*');
+          if (data && data.length > 0) {
+            const existingEmails = new Set(combined.map(u => u.email.toLowerCase()));
+            const filtered = (data as UserProfile[]).filter(u => !existingEmails.has((u.email || '').toLowerCase()));
+            combined = [...combined, ...filtered];
+          }
+        } catch (err) {
+          console.warn('Could not fetch profiles from Supabase:', err);
+        }
+      }
+
+      setUserAccounts(combined);
+    }
+
+    loadAccounts();
+  }, []);
+
+  // Handle Role Change
+  const handleChangeRole = (userId: string, newRole: UserRole) => {
+    const updated = userAccounts.map(u => {
+      if (u.id === userId) {
+        return { ...u, role: newRole };
+      }
+      return u;
+    });
+
+    setUserAccounts(updated);
+
+    // Save back to local storage dictionary
+    try {
+      const stored = localStorage.getItem('cv_registered_users');
+      const dict: Record<string, UserProfile> = stored ? JSON.parse(stored) : {};
+      const targetUser = updated.find(u => u.id === userId);
+      if (targetUser) {
+        dict[targetUser.email.toLowerCase()] = targetUser;
+        localStorage.setItem('cv_registered_users', JSON.stringify(dict));
+      }
+    } catch (err) {
+      console.warn('Could not update role in localStorage:', err);
+    }
+
+    setSuccessBanner(`User role updated to ${newRole.toUpperCase()} successfully.`);
+    setTimeout(() => setSuccessBanner(null), 3000);
+  };
+
+  // Handle Add New User Account
+  const handleCreateUser = (e: React.FormEvent) => {
+    e.preventDefault();
+    const newUser: UserProfile = {
+      id: `usr-${Date.now()}`,
+      email: newUserEmail.trim().toLowerCase(),
+      full_name: newUserName.trim(),
+      role: newUserRole,
+      phone_number: newUserPhone.trim(),
+      address: newUserAddress
+    };
+
+    // Update in local storage
+    try {
+      const stored = localStorage.getItem('cv_registered_users');
+      const dict: Record<string, UserProfile> = stored ? JSON.parse(stored) : {};
+      dict[newUser.email] = newUser;
+      localStorage.setItem('cv_registered_users', JSON.stringify(dict));
+    } catch {}
+
+    setUserAccounts([newUser, ...userAccounts]);
+    setSuccessBanner(`Account for ${newUser.full_name} (${newUser.role.toUpperCase()}) created successfully!`);
+    setShowAddUserModal(false);
+    setNewUserName('');
+    setNewUserEmail('');
+    setNewUserPhone('');
+    setNewUserRole('resident');
+    setTimeout(() => setSuccessBanner(null), 4000);
+  };
 
   // Handle Tanod Schedule Creation & Patrol Dispatch
   const handleTanodSubmit = async (e: React.FormEvent) => {
@@ -746,6 +880,17 @@ export default function AdminDashboardPage() {
           >
             <Baby className="w-3.5 h-3.5" />
             <span>SWDO Referrals ({complaints.filter(c => c.is_minor_flagged || c.category_id === 'minors').length + blotterRecords.filter(b => b.status === 'Referred to SWDO' || b.incident_type.toLowerCase().includes('minor') || b.incident_type.toLowerCase().includes('curfew')).length})</span>
+          </button>
+          <button
+            onClick={() => setActiveTab('users')}
+            className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 ${
+              activeTab === 'users' 
+                ? 'bg-blue-700 text-white shadow-sm font-bold' 
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            <Users className="w-3.5 h-3.5" />
+            <span>Accounts & Roles ({userAccounts.length})</span>
           </button>
         </div>
       </div>
@@ -1942,6 +2087,219 @@ export default function AdminDashboardPage() {
           </div>
         </div>
       )}
+      {/* TAB 8: USER ACCOUNTS & ROLE MANAGEMENT */}
+      {activeTab === 'users' && (
+        <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm space-y-6">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-slate-100 gap-3">
+            <div>
+              <div className="flex items-center space-x-2">
+                <Users className="w-5 h-5 text-blue-600" />
+                <h3 className="font-bold text-slate-900 text-base">User Accounts & Role-Based Access Control (RBAC)</h3>
+              </div>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Manage registered residents, desk clerks, peace & order officers, and appoint staff roles for Barangay Hibao-an Sur.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowAddUserModal(true)}
+              className="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-semibold shadow-sm transition-all cursor-pointer"
+            >
+              + Create User Account
+            </button>
+          </div>
+
+          {/* Search & Role Summary Banner */}
+          <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 flex flex-col md:flex-row gap-3 items-center justify-between text-xs">
+            <div className="relative w-full md:w-80">
+              <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                value={userSearchQuery}
+                onChange={(e) => setUserSearchQuery(e.target.value)}
+                placeholder="Search user by name, email, or role..."
+                className="w-full pl-10 pr-3.5 py-2 text-xs rounded-xl border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 shadow-inner"
+              />
+            </div>
+
+            <div className="flex flex-wrap gap-2 text-[11px] font-semibold text-slate-600 w-full md:w-auto">
+              <span className="bg-amber-100 text-amber-900 px-2 py-0.5 rounded-lg border border-amber-200">
+                Officials: {userAccounts.filter(u => u.role === 'official').length}
+              </span>
+              <span className="bg-blue-100 text-blue-900 px-2 py-0.5 rounded-lg border border-blue-200">
+                Staff: {userAccounts.filter(u => u.role === 'staff').length}
+              </span>
+              <span className="bg-emerald-100 text-emerald-900 px-2 py-0.5 rounded-lg border border-emerald-200">
+                Residents: {userAccounts.filter(u => u.role === 'resident').length}
+              </span>
+            </div>
+          </div>
+
+          {/* Accounts Table */}
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs text-slate-700">
+              <thead>
+                <tr className="border-b border-slate-200 text-slate-400 uppercase text-[10px]">
+                  <th className="py-2.5 px-3">Name</th>
+                  <th className="py-2.5 px-3">Email Address</th>
+                  <th className="py-2.5 px-3">Contact</th>
+                  <th className="py-2.5 px-3">Jurisdiction / Zone</th>
+                  <th className="py-2.5 px-3">Current Role</th>
+                  <th className="py-2.5 px-3 text-right">Assign Role (RBAC)</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {userAccounts
+                  .filter(u => {
+                    if (!userSearchQuery.trim()) return true;
+                    const q = userSearchQuery.toLowerCase();
+                    return (
+                      u.full_name.toLowerCase().includes(q) ||
+                      u.email.toLowerCase().includes(q) ||
+                      u.role.toLowerCase().includes(q)
+                    );
+                  })
+                  .map(acc => (
+                    <tr key={acc.id} className="hover:bg-slate-50/80 transition-colors">
+                      <td className="py-3 px-3 font-bold text-slate-900 flex items-center gap-2">
+                        <div className="w-7 h-7 rounded-full bg-slate-200 text-slate-700 flex items-center justify-center font-bold text-[10px] shrink-0 uppercase">
+                          {acc.full_name.slice(0, 2)}
+                        </div>
+                        <span>{acc.full_name}</span>
+                      </td>
+                      <td className="py-3 px-3 font-mono text-slate-600">{acc.email}</td>
+                      <td className="py-3 px-3 text-slate-500">{acc.phone_number || 'N/A'}</td>
+                      <td className="py-3 px-3 text-slate-600 text-[11px]">{acc.address || 'Hibao-an Sur'}</td>
+                      <td className="py-3 px-3">
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
+                          acc.role === 'official' ? 'bg-amber-100 text-amber-900 border border-amber-300' :
+                          acc.role === 'staff' ? 'bg-blue-100 text-blue-900 border border-blue-300' :
+                          acc.role === 'admin' ? 'bg-purple-100 text-purple-900 border border-purple-300' :
+                          'bg-emerald-100 text-emerald-900 border border-emerald-300'
+                        }`}>
+                          {acc.role}
+                        </span>
+                      </td>
+                      <td className="py-3 px-3 text-right">
+                        <select
+                          value={acc.role}
+                          onChange={(e) => handleChangeRole(acc.id, e.target.value as UserRole)}
+                          className="rounded-lg border border-slate-300 px-2 py-1 bg-white text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500/20 cursor-pointer"
+                        >
+                          <option value="resident">Resident / Citizen</option>
+                          <option value="staff">Barangay Staff (Secretary/Clerk)</option>
+                          <option value="official">Barangay Official (Captain/Kagawad)</option>
+                          <option value="admin">System Admin</option>
+                        </select>
+                      </td>
+                    </tr>
+                  ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Create User Modal */}
+          {showAddUserModal && (
+            <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+              <div className="bg-white rounded-3xl max-w-md w-full border border-slate-200 shadow-2xl p-6 sm:p-8 space-y-4">
+                <div className="flex justify-between items-center pb-2 border-b border-slate-100">
+                  <h4 className="font-bold text-slate-900 text-sm flex items-center gap-1.5">
+                    <Users className="w-4 h-4 text-blue-600" />
+                    Create Barangay User Account
+                  </h4>
+                  <button
+                    type="button"
+                    onClick={() => setShowAddUserModal(false)}
+                    className="text-slate-400 hover:text-slate-600 text-xs font-bold"
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                <form onSubmit={handleCreateUser} className="space-y-3 text-xs">
+                  <div>
+                    <label className="block font-semibold text-slate-700 mb-1">Full Legal Name *</label>
+                    <input
+                      type="text"
+                      required
+                      value={newUserName}
+                      onChange={(e) => setNewUserName(e.target.value)}
+                      placeholder="e.g. Kagawad Ramon Villanueva"
+                      className="w-full text-xs rounded-xl border border-slate-300 px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block font-semibold text-slate-700 mb-1">Email Address *</label>
+                    <input
+                      type="email"
+                      required
+                      value={newUserEmail}
+                      onChange={(e) => setNewUserEmail(e.target.value)}
+                      placeholder="e.g. ramon.villanueva@hibaoan.gov.ph"
+                      className="w-full text-xs rounded-xl border border-slate-300 px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block font-semibold text-slate-700 mb-1">Mobile Phone (For Alerts) *</label>
+                    <input
+                      type="tel"
+                      required
+                      value={newUserPhone}
+                      onChange={(e) => setNewUserPhone(e.target.value)}
+                      placeholder="e.g. 0917-111-2222"
+                      className="w-full text-xs rounded-xl border border-slate-300 px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block font-semibold text-slate-700 mb-1">Initial Account Role *</label>
+                    <select
+                      value={newUserRole}
+                      onChange={(e) => setNewUserRole(e.target.value as UserRole)}
+                      className="w-full text-xs rounded-xl border border-slate-300 px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                    >
+                      <option value="resident">Resident / Citizen</option>
+                      <option value="staff">Barangay Staff (Secretary / Clerk)</option>
+                      <option value="official">Barangay Official (Captain / Kagawad)</option>
+                      <option value="admin">System Administrator</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block font-semibold text-slate-700 mb-1">Barangay Address / Assigned Zone</label>
+                    <input
+                      type="text"
+                      value={newUserAddress}
+                      onChange={(e) => setNewUserAddress(e.target.value)}
+                      placeholder="e.g. Zone 2, Hibao-an Sur"
+                      className="w-full text-xs rounded-xl border border-slate-300 px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                    />
+                  </div>
+
+                  <div className="flex justify-end gap-2 pt-3">
+                    <button
+                      type="button"
+                      onClick={() => setShowAddUserModal(false)}
+                      className="px-4 py-2 bg-white border border-slate-300 text-slate-700 font-semibold rounded-xl text-xs hover:bg-slate-50"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl text-xs transition-all shadow-sm cursor-pointer"
+                    >
+                      Create Account
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* PRINTABLE CERTIFICATE TEMPLATE MODAL */}
       {printingCert && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto print:p-0 print:bg-white print:static">
