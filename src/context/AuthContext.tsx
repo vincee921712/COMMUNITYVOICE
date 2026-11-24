@@ -67,13 +67,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const saved = localStorage.getItem('cv_current_user');
     if (saved) {
       try {
-        setUser(JSON.parse(saved));
+        const parsed = JSON.parse(saved);
+        setUser(parsed);
+        // Synchronize cookie for middleware
+        document.cookie = `cv_user_role=${parsed.role || 'resident'}; path=/; max-age=604800; SameSite=Lax`;
       } catch {
         localStorage.removeItem('cv_current_user');
+        document.cookie = 'cv_user_role=; path=/; max-age=0';
       }
     } else {
       // Default initial mock demo user
-      setUser(DEMO_USERS['resident@hibaoan.gov.ph']);
+      const defaultUser = DEMO_USERS['resident@hibaoan.gov.ph'];
+      setUser(defaultUser);
+      document.cookie = `cv_user_role=${defaultUser.role}; path=/; max-age=604800; SameSite=Lax`;
     }
     setLoading(false);
   }, []);
@@ -109,6 +115,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
             setUser(loggedInProfile);
             localStorage.setItem('cv_current_user', JSON.stringify(loggedInProfile));
+            document.cookie = `cv_user_role=${loggedInProfile.role}; path=/; max-age=604800; SameSite=Lax`;
             return;
           }
         } catch {
@@ -136,6 +143,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       setUser(matched);
       localStorage.setItem('cv_current_user', JSON.stringify(matched));
+      document.cookie = `cv_user_role=${matched.role}; path=/; max-age=604800; SameSite=Lax`;
     } finally {
       setLoading(false);
     }
@@ -190,6 +198,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       setUser(newUser);
       localStorage.setItem('cv_current_user', JSON.stringify(newUser));
+      document.cookie = `cv_user_role=${newUser.role}; path=/; max-age=604800; SameSite=Lax`;
     } finally {
       setLoading(false);
     }
@@ -201,6 +210,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
     setUser(null);
     localStorage.removeItem('cv_current_user');
+    document.cookie = 'cv_user_role=; path=/; max-age=0';
   };
 
   return (

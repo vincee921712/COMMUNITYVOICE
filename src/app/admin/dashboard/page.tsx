@@ -34,6 +34,8 @@ import {
 } from '@/lib/mockData';
 import { Complaint, CertificateRequest, BlotterRecord, BarangayProject, TanodSchedule } from '@/lib/types';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase/client';
+import { useAuth } from '@/context/AuthContext';
+import { useRouter } from 'next/navigation';
 
 const LeafletMap = dynamic(() => import('@/components/Map/LeafletMap'), {
   ssr: false,
@@ -45,6 +47,8 @@ const LeafletMap = dynamic(() => import('@/components/Map/LeafletMap'), {
 });
 
 export default function AdminDashboardPage() {
+  const router = useRouter();
+  const { user, loading: authLoading } = useAuth();
   const [activeTab, setActiveTab] = useState<'complaints' | 'blotter' | 'certificates' | 'projects' | 'tanod' | 'analytics'>('complaints');
   const [complaints, setComplaints] = useState<Complaint[]>(INITIAL_COMPLAINTS);
   const [certificates, setCertificates] = useState<CertificateRequest[]>(INITIAL_CERTIFICATES);
@@ -592,6 +596,40 @@ export default function AdminDashboardPage() {
     setSuccessBanner(`Certificate ${id} approved! Marked as 'Ready for Pickup' and SMS notification sent.`);
     setTimeout(() => setSuccessBanner(null), 4000);
   };
+
+  // RBAC Access Control Guard
+  if (!authLoading && (!user || (user.role !== 'staff' && user.role !== 'official' && user.role !== 'admin'))) {
+    return (
+      <div className="min-h-[75vh] flex items-center justify-center px-4 py-16">
+        <div className="max-w-md w-full bg-white p-8 rounded-3xl border border-slate-200 shadow-xl text-center space-y-4">
+          <div className="w-14 h-14 bg-rose-100 text-rose-600 rounded-2xl flex items-center justify-center mx-auto shadow-inner">
+            <ShieldCheck className="w-8 h-8" />
+          </div>
+          <h2 className="text-xl font-extrabold text-slate-900">Restricted Barangay Staff Portal</h2>
+          <p className="text-xs text-slate-500 leading-relaxed">
+            Access to the complaint routing engine, electronic blotter, and administrative controls is strictly reserved for authorized Barangay Officials, Tanods, and Staff.
+          </p>
+          <div className="p-3 bg-slate-50 rounded-xl text-[11px] text-slate-600 border border-slate-200">
+            Currently logged in as: <strong className="text-slate-800">{user?.full_name || 'Guest / Resident'}</strong> ({user?.role || 'resident'})
+          </div>
+          <div className="pt-2 flex flex-col gap-2">
+            <button
+              onClick={() => router.push('/login')}
+              className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl text-xs transition-all shadow-sm cursor-pointer"
+            >
+              Sign In as Barangay Staff / Captain
+            </button>
+            <button
+              onClick={() => router.push('/')}
+              className="w-full py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-xl text-xs transition-all cursor-pointer"
+            >
+              Return to Citizen Homepage
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
