@@ -25,7 +25,7 @@ import {
   INITIAL_PROJECTS,
   CATEGORIES 
 } from '@/lib/mockData';
-import { Complaint, CertificateRequest, BlotterRecord, BarangayProject } from '@/lib/types';
+import { Complaint, CertificateRequest, BlotterRecord, BarangayProject, TanodSchedule } from '@/lib/types';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase/client';
 
 const LeafletMap = dynamic(() => import('@/components/Map/LeafletMap'), {
@@ -43,6 +43,7 @@ export default function AdminDashboardPage() {
   const [certificates, setCertificates] = useState<CertificateRequest[]>(INITIAL_CERTIFICATES);
   const [blotterRecords, setBlotterRecords] = useState<BlotterRecord[]>(INITIAL_BLOTTER);
   const [projects, setProjects] = useState<BarangayProject[]>(INITIAL_PROJECTS);
+  const [tanodSchedules, setTanodSchedules] = useState<TanodSchedule[]>(INITIAL_TANOD_SCHEDULE);
   const [successBanner, setSuccessBanner] = useState<string | null>(null);
 
   // Walk-in Blotter Entry Form State
@@ -54,6 +55,15 @@ export default function AdminDashboardPage() {
   const [assignedPersonnel, setAssignedPersonnel] = useState('Kagawad on Peace & Order');
   const [narrative, setNarrative] = useState('');
   const [isSubmittingBlotter, setIsSubmittingBlotter] = useState(false);
+
+  // Tanod Schedule Encoder & Dispatch State
+  const [showTanodForm, setShowTanodForm] = useState(false);
+  const [dutyDate, setDutyDate] = useState(new Date().toISOString().split('T')[0]);
+  const [dutyShift, setDutyShift] = useState<'Night Patrol (10PM - 6AM)' | 'Afternoon Shift (2PM - 10PM)' | 'Day Shift (6AM - 2PM)'>('Night Patrol (10PM - 6AM)');
+  const [dutySector, setDutySector] = useState('Zone 1 & Zone 2 (Main Access Roads)');
+  const [tanodNamesInput, setTanodNamesInput] = useState('Tanod Roberto Perez, Tanod Danilo Alunan');
+  const [isSubmittingTanod, setIsSubmittingTanod] = useState(false);
+  const [activeDispatchFilter, setActiveDispatchFilter] = useState<'All' | 'Night Patrol' | 'Afternoon Shift' | 'Day Shift'>('All');
 
   // Barangay Projects Form State
   const [showProjectForm, setShowProjectForm] = useState(false);
@@ -224,6 +234,93 @@ export default function AdminDashboardPage() {
 
     fetchProjects();
   }, []);
+
+  // Load Tanod Schedules from localStorage and Supabase
+  useEffect(() => {
+    async function fetchTanodSchedules() {
+      let combined: TanodSchedule[] = [...INITIAL_TANOD_SCHEDULE];
+
+      try {
+        const stored = localStorage.getItem('cv_custom_tanod');
+        if (stored) {
+          const locals: TanodSchedule[] = JSON.parse(stored);
+          combined = [...locals, ...combined];
+        }
+      } catch (err) {
+        console.warn('Could not read local tanod schedules:', err);
+      }
+
+      if (isSupabaseConfigured && supabase) {
+        try {
+          const { data } = await supabase
+            .from('tanod_duty_schedules')
+            .select('*')
+            .order('duty_date', { ascending: false });
+
+          if (data && data.length > 0) {
+            const existing = new Set(data.map(d => `${d.duty_date}_${d.shift}_${d.sector_assigned}`));
+            const filtered = combined.filter(ts => !existing.has(`${ts.duty_date}_${ts.shift}_${ts.sector_assigned}`));
+            combined = [...(data as TanodSchedule[]), ...filtered];
+          }
+        } catch (err) {
+          console.warn('Could not fetch tanod schedules from Supabase:', err);
+        }
+      }
+
+      setTanodSchedules(combined);
+    }
+
+    fetchTanodSchedules();
+  }, []);
+
+  // Handle Tanod Schedule Creation & Patrol Dispatch
+  const handleTanodSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSubmittingTanod(true);
+
+    const names = tanodNamesInput
+      .split(',')
+      .map(n => n.trim())
+      .filter(n => n.length > 0);
+
+    const newSchedule: TanodSchedule = {
+      id: `ts-${Date.now()}`,
+      duty_date: dutyDate,
+      shift: dutyShift,
+      tanod_names: names.length > 0 ? names : ['Barangay Tanod On-Duty'],
+      sector_assigned: dutySector
+    };
+
+    // 1. Save to local storage
+    try {
+      const stored = localStorage.getItem('cv_custom_tanod');
+      const list = stored ? JSON.parse(stored) : [];
+      list.unshift(newSchedule);
+      localStorage.setItem('cv_custom_tanod', JSON.stringify(list));
+    } catch (err) {
+      console.warn('Local storage write tanod error:', err);
+    }
+
+    // 2. Save to Supabase
+    if (isSupabaseConfigured && supabase) {
+      try {
+        await supabase.from('tanod_duty_schedules').insert({
+          duty_date: dutyDate,
+          shift: dutyShift,
+          tanod_names: names.length > 0 ? names : ['Barangay Tanod On-Duty'],
+          sector_assigned: dutySector
+        });
+      } catch (err) {
+        console.warn('Supabase tanod insert warning:', err);
+      }
+    }
+
+    setTanodSchedules([newSchedule, ...tanodSchedules]);
+    setSuccessBanner(`Patrol duty schedule encoded and dispatched for ${dutySector} (${dutyShift})!`);
+    setShowTanodForm(false);
+    setIsSubmittingTanod(false);
+    setTimeout(() => setSuccessBanner(null), 4000);
+  };
 
   // Handle New Project Creation
   const handleProjectSubmit = async (e: React.FormEvent) => {
@@ -510,7 +607,7 @@ export default function AdminDashboardPage() {
               activeTab === 'tanod' ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-600 hover:text-slate-900'
             }`}
           >
-            Tanod Schedules
+            Patrol Dispatch & Tanod ({tanodSchedules.length})
           </button>
         </div>
       </div>
@@ -1010,34 +1107,206 @@ export default function AdminDashboardPage() {
         </div>
       )}
 
-      {/* TAB 5: TANOD SCHEDULES */}
+      {/* TAB 5: TANOD SCHEDULES & PATROL DISPATCH BOARD */}
       {activeTab === 'tanod' && (
-        <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm space-y-4">
-          <div className="flex justify-between items-center pb-3 border-b border-slate-100">
+        <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm space-y-6">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-slate-100 gap-3">
             <div>
-              <h3 className="font-bold text-slate-900 text-base">Barangay Tanod Duty Schedules</h3>
-              <p className="text-xs text-slate-500">Patrol duty assignments encoded by staff.</p>
+              <div className="flex items-center space-x-2">
+                <ShieldCheck className="w-4 h-4 text-emerald-600" />
+                <h3 className="font-bold text-slate-900 text-base">Barangay Tanod Patrol Dispatch & Duty Board</h3>
+              </div>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Manage patrol sector assignments, nighttime curfew monitoring, and emergency response personnel for Hibao-an Sur.
+              </p>
+            </div>
+            <div className="flex items-center space-x-2">
+              <button
+                type="button"
+                onClick={() => setShowTanodForm(!showTanodForm)}
+                className="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-semibold shadow-sm transition-all"
+              >
+                {showTanodForm ? 'Cancel Form' : '+ Assign Patrol Shift'}
+              </button>
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
-            {INITIAL_TANOD_SCHEDULE.map((ts) => (
-              <div key={ts.id} className="p-4 bg-slate-50 rounded-2xl border border-slate-200 space-y-2">
-                <div className="flex justify-between items-center">
-                  <span className="font-bold text-blue-800">{ts.shift}</span>
-                  <span className="text-slate-400 font-mono text-[11px]">{ts.duty_date}</span>
+          {/* Quick Patrol Coverage Metrics */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+            <div className="p-3.5 rounded-2xl bg-indigo-50/60 border border-indigo-200/60 space-y-1">
+              <span className="text-[11px] font-bold text-indigo-700 uppercase tracking-wider block">Night Patrol Coverage</span>
+              <span className="text-xl font-extrabold text-indigo-950">
+                {tanodSchedules.filter(t => t.shift.includes('Night')).length} Scheduled Shifts
+              </span>
+              <p className="text-[11px] text-indigo-600">Active Curfew (10PM - 6AM) Enforcement</p>
+            </div>
+
+            <div className="p-3.5 rounded-2xl bg-emerald-50/60 border border-emerald-200/60 space-y-1">
+              <span className="text-[11px] font-bold text-emerald-700 uppercase tracking-wider block">Total Tanod Personnel</span>
+              <span className="text-xl font-extrabold text-emerald-950">
+                {Array.from(new Set(tanodSchedules.flatMap(t => t.tanod_names))).length} Active Officers
+              </span>
+              <p className="text-[11px] text-emerald-600">Barangay Public Safety Officers (BPSO)</p>
+            </div>
+
+            <div className="p-3.5 rounded-2xl bg-amber-50/60 border border-amber-200/60 space-y-1">
+              <span className="text-[11px] font-bold text-amber-700 uppercase tracking-wider block">Sectors Monitored</span>
+              <span className="text-xl font-extrabold text-amber-950">Zones 1, 2, 3 & 4</span>
+              <p className="text-[11px] text-amber-600">Mandurriao District Coordination</p>
+            </div>
+          </div>
+
+          {/* Patrol Shift Encoder Form */}
+          {showTanodForm && (
+            <form onSubmit={handleTanodSubmit} className="p-5 bg-blue-50/50 border border-blue-200 rounded-2xl space-y-4 text-xs">
+              <div className="flex items-center justify-between border-b border-blue-200/60 pb-2">
+                <span className="font-bold text-blue-900 flex items-center gap-1.5">
+                  <ShieldCheck className="w-4 h-4 text-blue-600" />
+                  Encode Patrol Shift & Tanod Roster
+                </span>
+                <span className="text-[10px] text-blue-600 font-mono">BPSO Operations • Hibao-an Sur</span>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">Duty Date *</label>
+                  <input
+                    type="date"
+                    required
+                    value={dutyDate}
+                    onChange={(e) => setDutyDate(e.target.value)}
+                    className="w-full text-xs rounded-xl border border-slate-300 px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                  />
                 </div>
-                <p className="text-slate-600 font-medium">Assigned Sector: <strong>{ts.sector_assigned}</strong></p>
-                <div className="text-slate-500">
-                  <span className="block text-[11px] font-bold text-slate-400 uppercase">On-Duty Tanod:</span>
-                  <ul className="list-disc pl-4 space-y-0.5 mt-1">
-                    {ts.tanod_names.map((name, i) => (
-                      <li key={i}>{name}</li>
-                    ))}
-                  </ul>
+
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">Patrol Shift Period *</label>
+                  <select
+                    value={dutyShift}
+                    onChange={(e) => setDutyShift(e.target.value as any)}
+                    className="w-full text-xs rounded-xl border border-slate-300 px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                  >
+                    <option value="Night Patrol (10PM - 6AM)">Night Patrol (10PM - 6AM) • Curfew & Security</option>
+                    <option value="Afternoon Shift (2PM - 10PM)">Afternoon Shift (2PM - 10PM) • Traffic & School Patrol</option>
+                    <option value="Day Shift (6AM - 2PM)">Day Shift (6AM - 2PM) • Barangay Center & Outpost</option>
+                  </select>
+                </div>
+
+                <div className="md:col-span-2">
+                  <label className="block font-semibold text-slate-700 mb-1">Sector & Area Assigned *</label>
+                  <select
+                    value={dutySector}
+                    onChange={(e) => setDutySector(e.target.value)}
+                    className="w-full text-xs rounded-xl border border-slate-300 px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                  >
+                    <option value="Zone 1 & Zone 2 (Main Access Roads)">Zone 1 & Zone 2 (Main Access Roads & Purok Narra)</option>
+                    <option value="Zone 3 & Health Center Perimeter">Zone 3 & Health Center Perimeter / Covered Court</option>
+                    <option value="Zone 4 & Outer Boundary Pathways">Zone 4 & Outer Boundary Pathways / Monterosa area</option>
+                    <option value="Barangay Hall Outpost & Public Market Entrance">Barangay Hall Outpost & Public Area Entrance</option>
+                  </select>
+                </div>
+
+                <div className="md:col-span-2">
+                  <label className="block font-semibold text-slate-700 mb-1">
+                    Assigned On-Duty Tanod Personnel (Comma-separated names) *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={tanodNamesInput}
+                    onChange={(e) => setTanodNamesInput(e.target.value)}
+                    placeholder="e.g. Tanod Roberto Perez, Tanod Danilo Alunan, Tanod Mario Gomez"
+                    className="w-full text-xs rounded-xl border border-slate-300 px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                  />
+                  <p className="text-[11px] text-slate-400 mt-1">
+                    Separate names with commas to list each officer individually on the dispatch board.
+                  </p>
                 </div>
               </div>
-            ))}
+
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowTanodForm(false)}
+                  className="px-4 py-2 bg-white border border-slate-300 text-slate-700 font-semibold rounded-xl text-xs hover:bg-slate-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmittingTanod}
+                  className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl text-xs transition-all shadow-sm disabled:opacity-50"
+                >
+                  {isSubmittingTanod ? 'Saving Dispatch...' : 'Publish Patrol Shift'}
+                </button>
+              </div>
+            </form>
+          )}
+
+          {/* Shift Filter Toolbar */}
+          <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+            <div className="flex items-center space-x-1.5">
+              <span className="text-xs font-semibold text-slate-500 mr-1">Filter Shifts:</span>
+              {(['All', 'Night Patrol', 'Afternoon Shift', 'Day Shift'] as const).map(filter => (
+                <button
+                  key={filter}
+                  onClick={() => setActiveDispatchFilter(filter)}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all ${
+                    activeDispatchFilter === filter
+                      ? 'bg-slate-900 text-white shadow-sm'
+                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                  }`}
+                >
+                  {filter}
+                </button>
+              ))}
+            </div>
+            <span className="text-xs text-slate-400">
+              Showing {tanodSchedules.filter(ts => activeDispatchFilter === 'All' || ts.shift.includes(activeDispatchFilter)).length} assignments
+            </span>
+          </div>
+
+          {/* Tanod Shift Cards Grid */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+            {tanodSchedules
+              .filter(ts => activeDispatchFilter === 'All' || ts.shift.includes(activeDispatchFilter))
+              .map((ts) => (
+                <div key={ts.id} className="p-4 bg-slate-50 rounded-2xl border border-slate-200 space-y-3 hover:border-slate-300 transition-all">
+                  <div className="flex justify-between items-start gap-2">
+                    <div>
+                      <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase inline-block mb-1 ${
+                        ts.shift.includes('Night') ? 'bg-indigo-100 text-indigo-800' :
+                        ts.shift.includes('Afternoon') ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800'
+                      }`}>
+                        {ts.shift}
+                      </span>
+                      <h4 className="font-bold text-slate-900 text-sm">{ts.sector_assigned}</h4>
+                    </div>
+                    <span className="text-slate-500 font-mono text-[11px] bg-white border border-slate-200 px-2 py-0.5 rounded-lg shrink-0">
+                      📅 {ts.duty_date}
+                    </span>
+                  </div>
+
+                  <div className="bg-white p-3 rounded-xl border border-slate-200/80 space-y-1.5">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                      Active Tanod Patrol Team ({ts.tanod_names.length} Officers)
+                    </span>
+                    <div className="flex flex-wrap gap-1.5">
+                      {ts.tanod_names.map((name, i) => (
+                        <span key={i} className="inline-flex items-center gap-1 bg-slate-100 text-slate-700 px-2 py-1 rounded-md text-[11px] font-medium">
+                          <Users className="w-3 h-3 text-slate-400" />
+                          {name}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="flex justify-between items-center text-[10px] text-slate-400 pt-1">
+                    <span>Dispatch Status: <strong className="text-emerald-700">Active Duty</strong></span>
+                    <span>Hibao-an Sur Peace & Order</span>
+                  </div>
+                </div>
+              ))}
           </div>
         </div>
       )}

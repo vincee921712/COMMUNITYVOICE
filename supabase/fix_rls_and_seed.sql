@@ -61,3 +61,15 @@ CREATE POLICY "Allow staff to insert blotter" ON public.blotter_records FOR INSE
 DROP POLICY IF EXISTS "Allow staff to update blotter" ON public.blotter_records;
 CREATE POLICY "Allow staff to update blotter" ON public.blotter_records FOR UPDATE USING (true);
 
+-- 7. Allow Staff/Officials to Manage Tanod Schedules
+ALTER TABLE public.tanod_duty_schedules ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Allow staff to view tanod schedules" ON public.tanod_duty_schedules;
+CREATE POLICY "Allow staff to view tanod schedules" ON public.tanod_duty_schedules FOR SELECT USING (true);
+
+DROP POLICY IF EXISTS "Allow staff to insert tanod schedules" ON public.tanod_duty_schedules;
+CREATE POLICY "Allow staff to insert tanod schedules" ON public.tanod_duty_schedules FOR INSERT WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow staff to update tanod schedules" ON public.tanod_duty_schedules;
+CREATE POLICY "Allow staff to update tanod schedules" ON public.tanod_duty_schedules FOR UPDATE USING (true);
+
+
