@@ -15,7 +15,7 @@ export const HIBAO_AN_SUR_ZONES: BarangayZone[] = [
     category: 'purok',
     description: 'Main road commercial and residential corridor near the Iglesia ni Cristo (INC) Church',
     landmark: 'Iglesia ni Cristo (INC) Church / Main Road',
-    centerCoords: [10.7335, 122.5218],
+    centerCoords: [10.727644903350507, 122.52676047371797],
     zoom: 16
   },
   {
@@ -51,7 +51,7 @@ export const HIBAO_AN_SUR_ZONES: BarangayZone[] = [
     category: 'purok',
     description: 'San Vicente community featuring the local chapel and covered basketball court',
     landmark: 'San Vicente Chapel & Basketball Court',
-    centerCoords: [10.7292, 122.5230],
+    centerCoords: [10.732435371748071, 122.52212316792009],
     zoom: 16
   },
   {
@@ -60,7 +60,7 @@ export const HIBAO_AN_SUR_ZONES: BarangayZone[] = [
     category: 'subdivision',
     description: 'Masterplanned residential community encompassing Phase I and Phase II',
     landmark: 'Sacred Heart Subdivision Entrance & Phases I-II',
-    centerCoords: [10.7315, 122.5260],
+    centerCoords: [10.727596293076477, 122.5266829140126],
     zoom: 16
   },
   {
@@ -69,7 +69,7 @@ export const HIBAO_AN_SUR_ZONES: BarangayZone[] = [
     category: 'subdivision',
     description: 'Established residential subdivision community with clubhouse amenities',
     landmark: 'Monterosa Subdivision Main Entrance',
-    centerCoords: [10.7285, 122.5255],
+    centerCoords: [10.731468178577062, 122.523647166773],
     zoom: 16
   },
   {
@@ -78,7 +78,7 @@ export const HIBAO_AN_SUR_ZONES: BarangayZone[] = [
     category: 'subdivision',
     description: 'Gated residential neighborhood community',
     landmark: 'Amysville Subdivision Gate',
-    centerCoords: [10.7348, 122.5238],
+    centerCoords: [10.726184543123622, 122.52794220492312],
     zoom: 16
   },
   {
@@ -96,7 +96,7 @@ export const HIBAO_AN_SUR_ZONES: BarangayZone[] = [
     category: 'subdivision',
     description: 'Residential subdivision bordering southern Mandurriao networks',
     landmark: 'Doña Ana Ros III Main Access Road',
-    centerCoords: [10.7278, 122.5222],
+    centerCoords: [10.72572487485764, 122.52836855279311],
     zoom: 16
   },
   {
@@ -110,4 +110,4 @@ export const HIBAO_AN_SUR_ZONES: BarangayZone[] = [
   }
 ];
 
-export const BARANGAY_HALL_LOCATION: [number, number] = [10.7314, 122.5228];
+export const BARANGAY_HALL_LOCATION: [number, number] = [10.730943182480452, 122.52419636963214];
