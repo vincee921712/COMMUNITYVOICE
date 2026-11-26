@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { UserPlus, Mail, Lock, User, Phone, MapPin, ArrowRight, CheckCircle2 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
@@ -32,8 +33,14 @@ export default function RegisterPage() {
       <div className="max-w-md w-full space-y-8 bg-white p-8 sm:p-10 rounded-3xl border border-slate-200 shadow-xl">
         {/* Header */}
         <div className="text-center space-y-2">
-          <div className="w-12 h-12 bg-emerald-600 rounded-2xl flex items-center justify-center text-white mx-auto shadow-md shadow-emerald-500/20">
-            <UserPlus className="w-6 h-6" />
+          <div className="relative w-16 h-16 rounded-2xl overflow-hidden mx-auto shadow-lg shadow-emerald-500/25 border border-emerald-500/30">
+            <Image
+              src="/logo.png"
+              alt="CommunityVoice Logo"
+              fill
+              className="object-cover"
+              priority
+            />
           </div>
           <h2 className="text-2xl font-extrabold text-slate-900 tracking-tight">Resident Registration</h2>
           <p className="text-xs text-slate-500">

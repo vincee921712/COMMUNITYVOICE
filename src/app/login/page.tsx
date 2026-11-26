@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { ShieldCheck, LogIn, Mail, Lock, UserCircle, CheckCircle2, ArrowRight } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
@@ -41,8 +42,14 @@ export default function LoginPage() {
       <div className="max-w-md w-full space-y-8 bg-white p-8 sm:p-10 rounded-3xl border border-slate-200 shadow-xl">
         {/* Header */}
         <div className="text-center space-y-2">
-          <div className="w-12 h-12 bg-blue-600 rounded-2xl flex items-center justify-center text-white mx-auto shadow-md shadow-blue-500/20">
-            <LogIn className="w-6 h-6" />
+          <div className="relative w-16 h-16 rounded-2xl overflow-hidden mx-auto shadow-lg shadow-blue-500/25 border border-blue-500/30">
+            <Image
+              src="/logo.png"
+              alt="CommunityVoice Logo"
+              fill
+              className="object-cover"
+              priority
+            />
           </div>
           <h2 className="text-2xl font-extrabold text-slate-900 tracking-tight">Sign in to CommunityVoice</h2>
           <p className="text-xs text-slate-500">

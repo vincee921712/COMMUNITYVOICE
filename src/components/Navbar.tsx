@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import { usePathname, useRouter } from 'next/navigation';
 import { 
   Building2, 
@@ -99,8 +100,14 @@ export default function Navbar() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex items-center justify-between h-16 gap-4">
         {/* Brand Logo */}
         <Link href="/" className="flex items-center space-x-3 shrink-0">
-          <div className="w-10 h-10 rounded-xl bg-blue-600 flex items-center justify-center text-white font-bold shadow-md shadow-blue-500/20 shrink-0">
-            CV
+          <div className="relative w-10 h-10 rounded-xl overflow-hidden shadow-md shadow-blue-500/20 shrink-0 border border-blue-500/30">
+            <Image
+              src="/logo.png"
+              alt="CommunityVoice Logo"
+              fill
+              className="object-cover"
+              priority
+            />
           </div>
           <div>
             <span className="font-bold text-base sm:text-lg text-slate-900 tracking-tight flex items-center gap-1.5 whitespace-nowrap">

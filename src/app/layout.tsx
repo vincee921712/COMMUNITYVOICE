@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import Image from 'next/image';
 import 'leaflet/dist/leaflet.css';
 import './globals.css';
 import Navbar from '@/components/Navbar';
@@ -7,6 +8,10 @@ import { AuthProvider } from '@/context/AuthContext';
 export const metadata: Metadata = {
   title: 'CommunityVoice - Barangay Hibao-an Sur',
   description: 'An AI-Powered Smart Community Feedback and Complaint Management System with Priority Scoring for Automated Routing',
+  icons: {
+    icon: '/logo.png',
+    apple: '/logo.png',
+  },
 };
 
 export default function RootLayout({
@@ -24,9 +29,19 @@ export default function RootLayout({
           </main>
           <footer className="bg-slate-900 text-slate-400 border-t border-slate-800 text-xs py-8 mt-12">
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col md:flex-row justify-between items-center gap-4">
-              <div>
-                <p className="font-semibold text-slate-200">CommunityVoice: Smart Community Feedback & Complaint Management System</p>
-                <p className="text-slate-400 mt-1">Official Pilot: Barangay Hibao-an Sur, Mandurriao, Iloilo City • IT 311 Project</p>
+              <div className="flex items-center space-x-3">
+                <div className="relative w-8 h-8 rounded-lg overflow-hidden shrink-0 border border-slate-700">
+                  <Image
+                    src="/logo.png"
+                    alt="CommunityVoice Logo"
+                    fill
+                    className="object-cover"
+                  />
+                </div>
+                <div>
+                  <p className="font-semibold text-slate-200">CommunityVoice: Smart Community Feedback & Complaint Management System</p>
+                  <p className="text-slate-400 mt-0.5">Official Pilot: Barangay Hibao-an Sur, Mandurriao, Iloilo City • IT 311 Project</p>
+                </div>
               </div>
               <div className="text-right text-slate-400">
                 <p>In compliance with the Data Privacy Act of 2012 (RA 10173)</p>
