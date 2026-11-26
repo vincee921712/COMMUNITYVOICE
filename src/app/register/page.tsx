@@ -6,6 +6,7 @@ import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { UserPlus, Mail, Lock, User, Phone, MapPin, ArrowRight, CheckCircle2 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
+import { HIBAO_AN_SUR_ZONES } from '@/lib/zones';
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -14,7 +15,7 @@ export default function RegisterPage() {
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
-  const [zone, setZone] = useState('Zone 1');
+  const [zone, setZone] = useState('Zone 1 (Near Iglesia ni Cristo Church / Main Road Area)');
   const [isLoading, setIsLoading] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -104,18 +105,29 @@ export default function RegisterPage() {
           </div>
 
           <div>
-            <label className="block font-semibold text-slate-700 mb-1">Barangay Zone / Purok *</label>
+            <label className="block font-semibold text-slate-700 mb-1">Barangay Zone / Subdivision / Street *</label>
             <div className="relative">
               <MapPin className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
               <select
                 value={zone}
                 onChange={(e) => setZone(e.target.value)}
-                className="w-full pl-10 pr-3.5 py-2.5 text-xs rounded-xl border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                className="w-full pl-10 pr-3.5 py-2.5 text-xs rounded-xl border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 cursor-pointer"
               >
-                <option value="Zone 1">Zone 1 (Purok Narra / Main Road)</option>
-                <option value="Zone 2">Zone 2 (Drainage / Central Pathway)</option>
-                <option value="Zone 3">Zone 3 (Near Covered Basketball Court)</option>
-                <option value="Zone 4">Zone 4 (Perimeter / Outer Subdivisions)</option>
+                <optgroup label="Barangay Zones / Puroks">
+                  {HIBAO_AN_SUR_ZONES.filter(z => z.category === 'purok').map(z => (
+                    <option key={z.id} value={z.name}>{z.name}</option>
+                  ))}
+                </optgroup>
+                <optgroup label="Subdivisions">
+                  {HIBAO_AN_SUR_ZONES.filter(z => z.category === 'subdivision').map(z => (
+                    <option key={z.id} value={z.name}>{z.name}</option>
+                  ))}
+                </optgroup>
+                <optgroup label="Streets & Corridors">
+                  {HIBAO_AN_SUR_ZONES.filter(z => z.category === 'street').map(z => (
+                    <option key={z.id} value={z.name}>{z.name}</option>
+                  ))}
+                </optgroup>
               </select>
             </div>
           </div>

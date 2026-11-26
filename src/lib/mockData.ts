@@ -82,9 +82,9 @@ export const INITIAL_COMPLAINTS: Complaint[] = [
     tracking_number: 'CV-2026-002',
     resident_name: 'Eduardo Ramos',
     resident_contact: '0928-555-4819',
-    title: 'Clogged Drainage Causing Stagnant Water in Zone 2',
+    title: 'Clogged Drainage Causing Stagnant Water in Zone 5 (Pangpang Area)',
     description: 'Plastic bottles and silt blocked the roadside canal. Water has been stagnant for 5 days, strong mosquito breeding concern.',
-    location_address: 'Zone 2 Main Access Road, Hibao-an Sur',
+    location_address: 'Zone 5 (Pangpang Area), Hibao-an Sur',
     latitude: 10.7310,
     longitude: 122.5218,
     category_id: 'sanitation',
@@ -166,13 +166,13 @@ export const INITIAL_CERTIFICATES: CertificateRequest[] = [
 export const INITIAL_PROJECTS: BarangayProject[] = [
   {
     id: 'p-1',
-    title: 'Drainage Clearing & Rehabilitation - Zone 2',
+    title: 'Drainage Clearing & Rehabilitation - Zone 5 (Pangpang Area)',
     description: 'De-silting and repair of main roadside canal to prevent localized flooding during heavy monsoon rains.',
     status: 'Ongoing',
     budget: 85000,
     start_date: '2026-10-15',
     target_completion_date: '2026-11-30',
-    location_address: 'Zone 2, Hibao-an Sur, Mandurriao, Iloilo City',
+    location_address: 'Zone 5 (Pangpang Area), Hibao-an Sur, Mandurriao, Iloilo City',
     latitude: 10.7321,
     longitude: 122.5215
   },
@@ -208,7 +208,7 @@ export const INITIAL_BLOTTER: BlotterRecord[] = [
     blotter_entry_number: 'BLOTTER-2026-042',
     incident_type: 'Neighborhood Noise & Boundary Dispute',
     incident_date: '2026-10-24T21:30:00Z',
-    incident_location: 'Zone 1 Purok Narra, Hibao-an Sur',
+    incident_location: 'Zone 1 (Near Iglesia ni Cristo Church / Main Road Area), Hibao-an Sur',
     complainant_name: 'Felipe Mendoza',
     respondent_name: 'Reynaldo Castor',
     narrative: 'Complainant reports loud videoke sound beyond 10 PM and verbal disagreement regarding fence boundary placement.',
@@ -224,14 +224,14 @@ export const INITIAL_TANOD_SCHEDULE: TanodSchedule[] = [
     duty_date: '2026-10-27',
     shift: 'Night Patrol (10PM - 6AM)',
     tanod_names: ['Tanod Roberto Perez', 'Tanod Danilo Alunan', 'Tanod Mario Gomez'],
-    sector_assigned: 'Zone 1 & Zone 2 (Main Access Roads)'
+    sector_assigned: 'Zone 1 & Zone 3'
   },
   {
     id: 'ts-2',
     duty_date: '2026-10-27',
     shift: 'Afternoon Shift (2PM - 10PM)',
     tanod_names: ['Tanod Ernesto Ramos', 'Tanod Joel Dela Cruz'],
-    sector_assigned: 'Zone 3 & Health Center Perimeter'
+    sector_assigned: 'Zone 6 / San Vicente & Subdivisions'
   }
 ];
 

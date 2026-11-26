@@ -41,6 +41,7 @@ import { supabase, isSupabaseConfigured } from '@/lib/supabase/client';
 import { useAuth, UserProfile } from '@/context/AuthContext';
 import { useRouter } from 'next/navigation';
 import { notifyComplaintAssigned, notifyCertificateReady, getStoredSmsLogs, DispatchedSms } from '@/lib/smsService';
+import { HIBAO_AN_SUR_ZONES } from '@/lib/zones';
 
 const LeafletMap = dynamic(() => import('@/components/Map/LeafletMap'), {
   ssr: false,
@@ -65,7 +66,7 @@ export default function AdminDashboardPage() {
   // Walk-in Blotter Entry Form State
   const [showBlotterForm, setShowBlotterForm] = useState(false);
   const [incidentType, setIncidentType] = useState('Neighborhood Dispute');
-  const [incidentLocation, setIncidentLocation] = useState('Zone 1, Hibao-an Sur');
+  const [incidentLocation, setIncidentLocation] = useState('Zone 1 (Near Iglesia ni Cristo Church / Main Road Area)');
   const [complainantName, setComplainantName] = useState('');
   const [respondentName, setRespondentName] = useState('');
   const [assignedPersonnel, setAssignedPersonnel] = useState('Kagawad on Peace & Order');
@@ -80,7 +81,7 @@ export default function AdminDashboardPage() {
   const [showTanodForm, setShowTanodForm] = useState(false);
   const [dutyDate, setDutyDate] = useState(new Date().toISOString().split('T')[0]);
   const [dutyShift, setDutyShift] = useState<'Night Patrol (10PM - 6AM)' | 'Afternoon Shift (2PM - 10PM)' | 'Day Shift (6AM - 2PM)'>('Night Patrol (10PM - 6AM)');
-  const [dutySector, setDutySector] = useState('Zone 1 & Zone 2 (Main Access Roads)');
+  const [dutySector, setDutySector] = useState('Zone 1 & Zone 3');
   const [tanodNamesInput, setTanodNamesInput] = useState('Tanod Roberto Perez, Tanod Danilo Alunan');
   const [isSubmittingTanod, setIsSubmittingTanod] = useState(false);
   const [activeDispatchFilter, setActiveDispatchFilter] = useState<'All' | 'Night Patrol' | 'Afternoon Shift' | 'Day Shift'>('All');
@@ -91,7 +92,7 @@ export default function AdminDashboardPage() {
   const [projectDescription, setProjectDescription] = useState('');
   const [projectBudget, setProjectBudget] = useState(50000);
   const [projectStatus, setProjectStatus] = useState<'Proposed' | 'Ongoing' | 'Completed' | 'On Hold'>('Ongoing');
-  const [projectZone, setProjectZone] = useState('Zone 1');
+  const [projectZone, setProjectZone] = useState('Zone 1 (Near Iglesia ni Cristo Church / Main Road Area)');
   const [projectPin, setProjectPin] = useState<[number, number]>([10.7314, 122.5228]);
   const [projectStartDate, setProjectStartDate] = useState(new Date().toISOString().split('T')[0]);
   const [projectTargetDate, setProjectTargetDate] = useState(new Date(Date.now() + 30 * 24 * 60 * 1000).toISOString().split('T')[0]);
@@ -107,7 +108,7 @@ export default function AdminDashboardPage() {
   const [newUserEmail, setNewUserEmail] = useState('');
   const [newUserPhone, setNewUserPhone] = useState('');
   const [newUserRole, setNewUserRole] = useState<UserRole>('resident');
-  const [newUserAddress, setNewUserAddress] = useState('Zone 1, Hibao-an Sur, Iloilo City');
+  const [newUserAddress, setNewUserAddress] = useState('Zone 1 (Near Iglesia ni Cristo Church / Main Road Area), Hibao-an Sur, Iloilo City');
   const [userSearchQuery, setUserSearchQuery] = useState('');
 
   // Load complaints from localStorage and Supabase
@@ -1085,10 +1086,9 @@ export default function AdminDashboardPage() {
                     onChange={(e) => setIncidentLocation(e.target.value)}
                     className="w-full text-xs rounded-xl border border-slate-300 px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                   >
-                    <option value="Zone 1 (Purok Narra / Main Road)">Zone 1 (Purok Narra / Main Road)</option>
-                    <option value="Zone 2 (Drainage / Central Pathway)">Zone 2 (Drainage / Central Pathway)</option>
-                    <option value="Zone 3 (Near Covered Court)">Zone 3 (Near Covered Court)</option>
-                    <option value="Zone 4 (Outer Subdivision Boundary)">Zone 4 (Outer Subdivision Boundary)</option>
+                    {HIBAO_AN_SUR_ZONES.map((z) => (
+                      <option key={z.id} value={z.name}>{z.name}</option>
+                    ))}
                   </select>
                 </div>
 
@@ -1390,10 +1390,9 @@ export default function AdminDashboardPage() {
                     onChange={(e) => setProjectZone(e.target.value)}
                     className="w-full text-xs rounded-xl border border-slate-300 px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                   >
-                    <option value="Zone 1">Zone 1 (Purok Narra / Main Road)</option>
-                    <option value="Zone 2">Zone 2 (Drainage / Central Pathway)</option>
-                    <option value="Zone 3">Zone 3 (Near Covered Court & Hall)</option>
-                    <option value="Zone 4">Zone 4 (Outer Subdivision Boundary)</option>
+                    {HIBAO_AN_SUR_ZONES.map((z) => (
+                      <option key={z.id} value={z.name}>{z.name}</option>
+                    ))}
                   </select>
                 </div>
 
@@ -1580,7 +1579,7 @@ export default function AdminDashboardPage() {
 
             <div className="p-3.5 rounded-2xl bg-amber-50/60 border border-amber-200/60 space-y-1">
               <span className="text-[11px] font-bold text-amber-700 uppercase tracking-wider block">Sectors Monitored</span>
-              <span className="text-xl font-extrabold text-amber-950">Zones 1, 2, 3 & 4</span>
+              <span className="text-xl font-extrabold text-amber-950">11 Defined Sectors</span>
               <p className="text-[11px] text-amber-600">Mandurriao District Coordination</p>
             </div>
           </div>
@@ -1628,9 +1627,11 @@ export default function AdminDashboardPage() {
                     onChange={(e) => setDutySector(e.target.value)}
                     className="w-full text-xs rounded-xl border border-slate-300 px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                   >
-                    <option value="Zone 1 & Zone 2 (Main Access Roads)">Zone 1 & Zone 2 (Main Access Roads & Purok Narra)</option>
-                    <option value="Zone 3 & Health Center Perimeter">Zone 3 & Health Center Perimeter / Covered Court</option>
-                    <option value="Zone 4 & Outer Boundary Pathways">Zone 4 & Outer Boundary Pathways / Monterosa area</option>
+                    <option value="Zone 1 & Zone 3">Zone 1 (INC Church / Main Road) & Zone 3</option>
+                    <option value="Zone 4 & Zone 5 (Pangpang Area)">Zone 4 & Zone 5 (Pangpang Area)</option>
+                    <option value="Zone 6 / San Vicente & Subdivisions">Zone 6 / San Vicente (Chapel & Court) & Subdivisions</option>
+                    <option value="Sacred Heart, Monterosa & Amysville Subdivisions">Sacred Heart, Monterosa & Amysville Subdivisions</option>
+                    <option value="CTI, Doña Ana Ros III & Guzman Street">CTI, Doña Ana Ros III & Guzman Street</option>
                     <option value="Barangay Hall Outpost & Public Market Entrance">Barangay Hall Outpost & Public Area Entrance</option>
                   </select>
                 </div>

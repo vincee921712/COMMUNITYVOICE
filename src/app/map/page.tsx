@@ -22,6 +22,7 @@ import { INITIAL_COMPLAINTS, INITIAL_PROJECTS, CATEGORIES } from '@/lib/mockData
 import { Complaint, BarangayProject } from '@/lib/types';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase/client';
 import { useAuth } from '@/context/AuthContext';
+import { HIBAO_AN_SUR_ZONES, BARANGAY_HALL_LOCATION } from '@/lib/zones';
 
 const LeafletMap = dynamic(() => import('@/components/Map/LeafletMap'), {
   ssr: false,
@@ -124,13 +125,18 @@ export default function MapPage() {
     loadAllProjects();
   }, []);
 
-  // Quick jump zones in Barangay Hibao-an Sur
+  // Quick jump zones in Barangay Hibao-an Sur (Official Jurisdiction)
+  const [selectedZoneFilter, setSelectedZoneFilter] = useState<string>('all');
+
   const quickZones = [
-    { label: 'Barangay Hall (Center)', coords: [10.7314, 122.5228] as [number, number], zoom: 16 },
-    { label: 'Zone 1 (Purok Narra)', coords: [10.7328, 122.5220] as [number, number], zoom: 16 },
-    { label: 'Zone 2 (Canal Area)', coords: [10.7318, 122.5210] as [number, number], zoom: 16 },
-    { label: 'Zone 3 (Court / Utilities)', coords: [10.7325, 122.5235] as [number, number], zoom: 16 },
-    { label: 'Zone 4 (Perimeter)', coords: [10.7305, 122.5242] as [number, number], zoom: 16 },
+    { label: 'Barangay Hall', coords: BARANGAY_HALL_LOCATION, zoom: 17, category: 'hall' },
+    ...HIBAO_AN_SUR_ZONES.map(z => ({
+      label: z.name,
+      coords: z.centerCoords,
+      zoom: z.zoom,
+      category: z.category,
+      landmark: z.landmark
+    }))
   ];
 
   // RBAC Filter: Residents ONLY see their own complaints; Officials/Staff see all
@@ -209,20 +215,31 @@ export default function MapPage() {
         </div>
 
         {/* Quick Zone Navigator */}
-        <div className="flex flex-wrap items-center gap-1.5 bg-white p-1.5 rounded-xl border border-slate-200 shadow-sm text-xs">
-          <span className="text-[11px] font-semibold text-slate-400 px-2">Jump to:</span>
-          {quickZones.map((z) => (
-            <button
-              key={z.label}
-              onClick={() => {
-                setMapCenter(z.coords);
-                setMapZoom(z.zoom);
-              }}
-              className="px-2.5 py-1 rounded-lg bg-slate-50 hover:bg-blue-50 hover:text-blue-700 text-slate-700 font-medium transition-all text-xs"
-            >
-              {z.label}
-            </button>
-          ))}
+        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 bg-white p-2 rounded-2xl border border-slate-200 shadow-sm text-xs max-w-full overflow-hidden">
+          <div className="flex items-center space-x-1.5 px-2 text-slate-500 font-semibold shrink-0">
+            <MapPin className="w-3.5 h-3.5 text-blue-600" />
+            <span className="text-[11px] uppercase tracking-wider text-slate-400">Jump to Sector:</span>
+          </div>
+          <div className="flex items-center gap-1.5 overflow-x-auto w-full pb-1 sm:pb-0 scrollbar-none">
+            {quickZones.map((z) => (
+              <button
+                key={z.label}
+                type="button"
+                onClick={() => {
+                  setMapCenter(z.coords);
+                  setMapZoom(z.zoom);
+                }}
+                className={`px-2.5 py-1 rounded-lg text-xs font-medium whitespace-nowrap transition-all border ${
+                  mapCenter[0] === z.coords[0] && mapCenter[1] === z.coords[1]
+                    ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
+                    : 'bg-slate-50 hover:bg-blue-50 text-slate-700 hover:text-blue-700 border-slate-200'
+                }`}
+                title={'landmark' in z ? z.landmark : z.label}
+              >
+                {z.label}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 

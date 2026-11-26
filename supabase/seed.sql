@@ -7,13 +7,13 @@
 INSERT INTO public.barangay_projects (title, description, status, budget, start_date, target_completion_date, location_address, latitude, longitude)
 VALUES
     (
-        'Drainage Clearing & Rehabilitation - Zone 2',
+        'Drainage Clearing & Rehabilitation - Zone 5 (Pangpang Area)',
         'De-silting and repair of main roadside canal to prevent localized flooding during heavy monsoon rains.',
         'Ongoing',
         85000.00,
         '2026-10-15',
         '2026-11-30',
-        'Zone 2, Hibao-an Sur, Mandurriao, Iloilo City',
+        'Zone 5 (Pangpang Area), Hibao-an Sur, Mandurriao, Iloilo City',
         10.7321,
         122.5215
     ),
@@ -48,13 +48,13 @@ VALUES
         CURRENT_DATE,
         'Night Patrol (10PM - 6AM)',
         ARRAY['Tanod Roberto Perez', 'Tanod Danilo Alunan', 'Tanod Mario Gomez'],
-        'Zone 1 & Zone 2 (Main Access Roads)'
+        'Zone 1 & Zone 3'
     ),
     (
         CURRENT_DATE,
         'Afternoon Shift (2PM - 10PM)',
         ARRAY['Tanod Ernesto Ramos', 'Tanod Joel Dela Cruz'],
-        'Zone 3 & Health Center Perimeter'
+        'Zone 6 / San Vicente & Subdivisions'
     )
 ON CONFLICT DO NOTHING;
 
