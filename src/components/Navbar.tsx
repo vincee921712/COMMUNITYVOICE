@@ -44,7 +44,7 @@ export default function Navbar() {
 
   const navLinks = [
     isStaffOrOfficial
-      ? { href: '/admin/dashboard', label: 'Staff Overview', icon: LayoutDashboard }
+      ? { href: '/admin/dashboard', label: 'Barangay Portal', icon: LayoutDashboard }
       : { href: '/resident/dashboard', label: 'Resident Overview', icon: Building2 },
     ...(isStaffOrOfficial
       ? [
