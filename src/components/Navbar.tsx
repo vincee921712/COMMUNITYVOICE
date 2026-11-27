@@ -28,6 +28,24 @@ export default function Navbar() {
   const [showNotifications, setShowNotifications] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [smsLogs, setSmsLogs] = useState<DispatchedSms[]>([]);
+  const [activeAdminTab, setActiveAdminTab] = useState<string | null>(null);
+
+  useEffect(() => {
+    const syncTabFromUrl = () => {
+      setActiveAdminTab(new URLSearchParams(window.location.search).get('tab'));
+    };
+    const handleTabChange = (event: Event) => {
+      setActiveAdminTab((event as CustomEvent<string>).detail || null);
+    };
+
+    syncTabFromUrl();
+    window.addEventListener('popstate', syncTabFromUrl);
+    window.addEventListener('cv_admin_tab_change', handleTabChange);
+    return () => {
+      window.removeEventListener('popstate', syncTabFromUrl);
+      window.removeEventListener('cv_admin_tab_change', handleTabChange);
+    };
+  }, []);
 
   useEffect(() => {
     setSmsLogs(getStoredSmsLogs());
@@ -134,13 +152,16 @@ export default function Navbar() {
         <nav className="hidden lg:flex items-center space-x-1 xl:space-x-1.5">
           {navLinks.map((link) => {
             const Icon = link.icon;
-            const isActive = pathname === link.href;
+            const tab = new URLSearchParams(link.href.split('?')[1] || '').get('tab');
+            const isActive = isStaffOrOfficial && pathname === '/admin/dashboard'
+              ? tab ? activeAdminTab === tab : !activeAdminTab
+              : pathname === link.href;
             return (
               <Link
                 key={link.href}
                 href={link.href}
                 onClick={() => {
-                  const tab = new URLSearchParams(link.href.split('?')[1] || '').get('tab');
+                  setActiveAdminTab(tab);
                   if (tab) window.dispatchEvent(new CustomEvent('cv_admin_tab_change', { detail: tab }));
                 }}
                 className={`flex items-center space-x-1.5 px-2.5 py-1.5 xl:px-3 xl:py-2 rounded-lg text-xs xl:text-sm font-medium whitespace-nowrap transition-colors shrink-0 ${
@@ -252,14 +273,17 @@ export default function Navbar() {
         <div className="lg:hidden border-t border-slate-100 bg-white px-4 pt-2 pb-4 space-y-1">
           {navLinks.map((link) => {
             const Icon = link.icon;
-            const isActive = pathname === link.href;
+            const tab = new URLSearchParams(link.href.split('?')[1] || '').get('tab');
+            const isActive = isStaffOrOfficial && pathname === '/admin/dashboard'
+              ? tab ? activeAdminTab === tab : !activeAdminTab
+              : pathname === link.href;
             return (
               <Link
                 key={link.href}
                 href={link.href}
                 onClick={() => {
                   setMobileMenuOpen(false);
-                  const tab = new URLSearchParams(link.href.split('?')[1] || '').get('tab');
+                  setActiveAdminTab(tab);
                   if (tab) window.dispatchEvent(new CustomEvent('cv_admin_tab_change', { detail: tab }));
                 }}
                 className={`flex items-center space-x-2 px-3 py-2.5 rounded-lg text-sm font-medium whitespace-nowrap ${
