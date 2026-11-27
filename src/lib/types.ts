@@ -68,6 +68,10 @@ export interface IncidentResolutionReport {
   resolved_at: string;
   assigned_official: string;
   remarks?: string;
+  photos?: Array<{
+    name: string;
+    data: string;
+  }>;
 }
 
 export interface ConversationMessage {

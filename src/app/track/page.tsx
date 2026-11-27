@@ -487,6 +487,19 @@ export default function TrackPage() {
               <p className="text-xs"><strong>Incident Summary:</strong> {result.resolution_report.incident_summary}</p>
               <p className="text-xs"><strong>Actions Taken:</strong> {result.resolution_report.actions_taken}</p>
               <p className="text-xs"><strong>Resolution Details:</strong> {result.resolution_report.resolution_details}</p>
+              {!!result.resolution_report.photos?.length && (
+                <div className="space-y-2 border-t border-emerald-200 pt-3">
+                  <h4 className="text-xs font-bold text-emerald-900">Photos of Completed Work</h4>
+                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                    {result.resolution_report.photos.map((photo: { name: string; data: string }, index: number) => (
+                      <figure key={`${photo.name}-${index}`} className="space-y-1">
+                        <img src={photo.data} alt={photo.name} className="aspect-[4/3] w-full rounded-lg border border-emerald-200 object-cover" />
+                        <figcaption className="break-words text-[10px] text-emerald-800">{photo.name}</figcaption>
+                      </figure>
+                    ))}
+                  </div>
+                </div>
+              )}
             </section>
           )}
 

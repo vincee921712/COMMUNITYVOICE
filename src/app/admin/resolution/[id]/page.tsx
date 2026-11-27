@@ -1,8 +1,8 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { ArrowLeft, CheckCircle2, Printer } from 'lucide-react';
+import { ArrowLeft, CheckCircle2, ImagePlus, Printer, X } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { INITIAL_COMPLAINTS } from '@/lib/mockData';
 import { Complaint, IncidentResolutionReport } from '@/lib/types';
@@ -19,8 +19,60 @@ export default function ResolutionReportPage() {
   const [investigation, setInvestigation] = useState('');
   const [resolution, setResolution] = useState('');
   const [remarks, setRemarks] = useState('');
+  const [photos, setPhotos] = useState<Array<{ name: string; data: string }>>([]);
   const [resolvedAt, setResolvedAt] = useState(new Date().toISOString().slice(0, 16));
   const [error, setError] = useState('');
+  const photoInputRef = useRef<HTMLInputElement>(null);
+
+  const handlePhotoSelection = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.target.files || []);
+    event.target.value = '';
+    if (!files.length) return;
+    if (photos.length + files.length > 5) {
+      setError('You can attach up to 5 resolution photos.');
+      return;
+    }
+
+    try {
+      const preparedPhotos = await Promise.all(files.map((file) => new Promise<{ name: string; data: string }>((resolve, reject) => {
+        if (!file.type.startsWith('image/')) {
+          reject(new Error(`${file.name} is not an image.`));
+          return;
+        }
+        if (file.size > 8 * 1024 * 1024) {
+          reject(new Error(`${file.name} exceeds the 8 MB limit.`));
+          return;
+        }
+
+        const reader = new FileReader();
+        reader.onerror = () => reject(new Error(`Could not read ${file.name}.`));
+        reader.onload = () => {
+          const image = new window.Image();
+          image.onerror = () => reject(new Error(`Could not process ${file.name}.`));
+          image.onload = () => {
+            const maxDimension = 1600;
+            const scale = Math.min(1, maxDimension / Math.max(image.width, image.height));
+            const canvas = document.createElement('canvas');
+            canvas.width = Math.max(1, Math.round(image.width * scale));
+            canvas.height = Math.max(1, Math.round(image.height * scale));
+            const context = canvas.getContext('2d');
+            if (!context) {
+              reject(new Error(`Could not process ${file.name}.`));
+              return;
+            }
+            context.drawImage(image, 0, 0, canvas.width, canvas.height);
+            resolve({ name: file.name, data: canvas.toDataURL('image/jpeg', 0.82) });
+          };
+          image.src = String(reader.result);
+        };
+        reader.readAsDataURL(file);
+      })));
+      setPhotos((current) => [...current, ...preparedPhotos]);
+      setError('');
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Could not process the selected photos.');
+    }
+  };
 
   useEffect(() => {
     if (!loading && (!user || !['staff', 'official', 'admin'].includes(user.role))) {
@@ -47,6 +99,7 @@ export default function ResolutionReportPage() {
       resolved_at: new Date(resolvedAt).toISOString(),
       assigned_official: user.full_name,
       remarks: remarks.trim() || undefined,
+      photos,
     };
     const resolvedComplaint = {
       ...complaint,
@@ -71,7 +124,7 @@ export default function ResolutionReportPage() {
         localStorage.setItem('cv_custom_complaints', JSON.stringify([...locals, resolvedComplaint]));
       }
       if (isSupabaseConfigured && supabase) {
-        await supabase.from('complaints').update({
+        const { error: saveError } = await supabase.from('complaints').update({
           status: 'Resolved',
           resolution_notes: resolution.trim(),
           resolution_report: report,
@@ -79,6 +132,7 @@ export default function ResolutionReportPage() {
           status_history: resolvedComplaint.status_history,
           updated_at: resolvedComplaint.updated_at,
         }).eq('id', complaint.id);
+        if (saveError) throw saveError;
       }
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Could not save the resolution report.');
@@ -120,6 +174,19 @@ export default function ResolutionReportPage() {
             <p><strong>Date Resolved:</strong> {new Date(complaint.resolution_report.resolved_at).toLocaleString()}</p>
             {complaint.resolution_report.remarks && <p><strong>Remarks:</strong> {complaint.resolution_report.remarks}</p>}
           </div>
+          {!!complaint.resolution_report.photos?.length && (
+            <section className="space-y-3 border-t border-slate-100 pt-5">
+              <h2 className="font-bold text-slate-900">Resolution Photos</h2>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                {complaint.resolution_report.photos.map((photo) => (
+                  <figure key={`${photo.name}-${photo.data.slice(-24)}`} className="space-y-1">
+                    <img src={photo.data} alt={photo.name} className="w-full aspect-[4/3] object-cover rounded-xl border border-slate-200" />
+                    <figcaption className="text-xs text-slate-500 break-words">{photo.name}</figcaption>
+                  </figure>
+                ))}
+              </div>
+            </section>
+          )}
           <button onClick={() => window.print()} className="print:hidden inline-flex items-center gap-2 px-4 py-2 border border-slate-300 rounded-xl text-xs font-bold">
             <Printer className="w-4 h-4" /> Print / Save PDF
           </button>
@@ -150,6 +217,46 @@ export default function ResolutionReportPage() {
               />
             </label>
           ))}
+          <section className="space-y-3 rounded-xl border border-slate-200 p-4">
+            <div>
+              <h2 className="text-sm font-bold text-slate-800">Resolution Photos <span className="font-normal text-slate-500">(optional)</span></h2>
+              <p className="mt-1 text-xs text-slate-500">Attach up to 5 photos showing the completed work. Images are resized before saving.</p>
+            </div>
+            <input
+              ref={photoInputRef}
+              type="file"
+              accept="image/*"
+              multiple
+              onChange={handlePhotoSelection}
+              className="hidden"
+            />
+            <button
+              type="button"
+              onClick={() => photoInputRef.current?.click()}
+              disabled={photos.length >= 5}
+              className="inline-flex items-center gap-2 rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-semibold text-blue-700 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <ImagePlus className="h-4 w-4" /> Add photos
+            </button>
+            {!!photos.length && (
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                {photos.map((photo, index) => (
+                  <figure key={`${photo.name}-${index}`} className="relative space-y-1">
+                    <img src={photo.data} alt={photo.name} className="aspect-[4/3] w-full rounded-lg border border-slate-200 object-cover" />
+                    <figcaption className="break-words pr-8 text-[11px] text-slate-500">{photo.name}</figcaption>
+                    <button
+                      type="button"
+                      onClick={() => setPhotos((current) => current.filter((_, photoIndex) => photoIndex !== index))}
+                      aria-label={`Remove ${photo.name}`}
+                      className="absolute right-1 top-1 rounded-full bg-white/95 p-1 text-slate-600 shadow hover:text-rose-600"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  </figure>
+                ))}
+              </div>
+            )}
+          </section>
           <label className="block text-xs font-semibold text-slate-700">
             Date resolved
             <input type="datetime-local" value={resolvedAt} onChange={(e) => setResolvedAt(e.target.value)} required className="mt-1 block w-full rounded-xl border border-slate-200 px-3 py-2" />
