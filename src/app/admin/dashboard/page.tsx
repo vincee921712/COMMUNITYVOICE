@@ -63,6 +63,29 @@ export default function AdminDashboardPage() {
   const [tanodSchedules, setTanodSchedules] = useState<TanodSchedule[]>(INITIAL_TANOD_SCHEDULE);
   const [successBanner, setSuccessBanner] = useState<string | null>(null);
 
+  useEffect(() => {
+    const syncTab = (tab: string | null) => {
+      if (tab === 'requests') {
+        setActiveTab('certificates');
+      } else if (tab === 'complaints' || tab === 'certificates') {
+        setActiveTab(tab);
+      }
+    };
+    const syncTabFromUrl = () => syncTab(new URLSearchParams(window.location.search).get('tab'));
+    const handleTabChange = (event: Event) => {
+      const tab = (event as CustomEvent<string>).detail;
+      syncTab(tab || null);
+    };
+
+    syncTabFromUrl();
+    window.addEventListener('popstate', syncTabFromUrl);
+    window.addEventListener('cv_admin_tab_change', handleTabChange);
+    return () => {
+      window.removeEventListener('popstate', syncTabFromUrl);
+      window.removeEventListener('cv_admin_tab_change', handleTabChange);
+    };
+  }, []);
+
   // Walk-in Blotter Entry Form State
   const [showBlotterForm, setShowBlotterForm] = useState(false);
   const [incidentType, setIncidentType] = useState('Neighborhood Dispute');

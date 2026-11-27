@@ -139,6 +139,10 @@ export default function Navbar() {
               <Link
                 key={link.href}
                 href={link.href}
+                onClick={() => {
+                  const tab = new URLSearchParams(link.href.split('?')[1] || '').get('tab');
+                  if (tab) window.dispatchEvent(new CustomEvent('cv_admin_tab_change', { detail: tab }));
+                }}
                 className={`flex items-center space-x-1.5 px-2.5 py-1.5 xl:px-3 xl:py-2 rounded-lg text-xs xl:text-sm font-medium whitespace-nowrap transition-colors shrink-0 ${
                   isActive
                     ? 'bg-blue-50 text-blue-700 font-semibold'
@@ -253,7 +257,11 @@ export default function Navbar() {
               <Link
                 key={link.href}
                 href={link.href}
-                onClick={() => setMobileMenuOpen(false)}
+                onClick={() => {
+                  setMobileMenuOpen(false);
+                  const tab = new URLSearchParams(link.href.split('?')[1] || '').get('tab');
+                  if (tab) window.dispatchEvent(new CustomEvent('cv_admin_tab_change', { detail: tab }));
+                }}
                 className={`flex items-center space-x-2 px-3 py-2.5 rounded-lg text-sm font-medium whitespace-nowrap ${
                   isActive
                     ? 'bg-blue-50 text-blue-700 font-semibold'
