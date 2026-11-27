@@ -157,6 +157,8 @@ export default function LeafletMap({
                 </div>
                 <h4 style="font-weight: 700; font-size: 13px; margin: 0 0 4px 0; color: #0f172a; line-height: 1.3;">${c.title}</h4>
                 <p style="margin: 0 0 6px 0; color: #475569; font-size: 11px; line-height: 1.4;">${c.location_address}</p>
+                <p style="margin: 0 0 6px 0; color: #475569; font-size: 10px; line-height: 1.4;">${c.description}</p>
+                <p style="margin: 0 0 6px 0; color: #64748b; font-size: 10px;">Resident: ${c.resident_name || 'N/A'} • Reported: ${new Date(c.created_at).toLocaleDateString()}</p>
                 <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1px solid #e2e8f0; padding-top: 6px; margin-top: 6px;">
                   <span style="font-size: 10px; color: #64748b;">Status: <strong style="color: #0f172a;">${c.status}</strong></span>
                   <a href="/track?id=${c.tracking_number}" style="color: #2563eb; font-weight: 600; text-decoration: none; font-size: 10px;">Track →</a>

@@ -22,6 +22,7 @@ import { INITIAL_COMPLAINTS, INITIAL_PROJECTS, CATEGORIES } from '@/lib/mockData
 import { Complaint, BarangayProject } from '@/lib/types';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase/client';
 import { useAuth } from '@/context/AuthContext';
+import { useRouter } from 'next/navigation';
 import { HIBAO_AN_SUR_ZONES, BARANGAY_HALL_LOCATION } from '@/lib/zones';
 
 const LeafletMap = dynamic(() => import('@/components/Map/LeafletMap'), {
@@ -34,6 +35,7 @@ const LeafletMap = dynamic(() => import('@/components/Map/LeafletMap'), {
 });
 
 export default function MapPage() {
+  const router = useRouter();
   const { user } = useAuth();
   const [complaints, setComplaints] = useState<Complaint[]>(INITIAL_COMPLAINTS);
   const [projects, setProjects] = useState<BarangayProject[]>(INITIAL_PROJECTS);
@@ -44,11 +46,20 @@ export default function MapPage() {
   const [mapCenter, setMapCenter] = useState<[number, number]>([10.7314, 122.5228]);
   const [mapZoom, setMapZoom] = useState<number>(15);
   const [myTrackings, setMyTrackings] = useState<string[]>([]);
+  const [selectedStatus, setSelectedStatus] = useState<string>('all');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
 
   // Check if current user is an official or staff member
   const isStaffOrOfficial = Boolean(
     user && (user.role === 'staff' || user.role === 'official' || user.role === 'admin')
   );
+
+  useEffect(() => {
+    if (user && !isStaffOrOfficial) {
+      router.replace('/');
+    }
+  }, [isStaffOrOfficial, router, user]);
 
   // Load tracking numbers submitted on this device / browser
   useEffect(() => {
@@ -176,6 +187,9 @@ export default function MapPage() {
   const filteredComplaints = userScopedComplaints.filter((c) => {
     if (selectedCategory !== 'all' && c.category_id !== selectedCategory) return false;
     if (selectedPriority !== 'all' && c.priority !== selectedPriority) return false;
+    if (selectedStatus !== 'all' && c.status !== selectedStatus) return false;
+    if (dateFrom && new Date(c.created_at).toISOString().slice(0, 10) < dateFrom) return false;
+    if (dateTo && new Date(c.created_at).toISOString().slice(0, 10) > dateTo) return false;
     return true;
   });
 
@@ -301,6 +315,26 @@ export default function MapPage() {
               <option value="Low">🟢 Low Priority</option>
             </select>
           </div>
+
+          {isStaffOrOfficial && (
+            <>
+              <div className="flex items-center space-x-1.5 font-semibold text-slate-700">
+                <span>Status:</span>
+                <select value={selectedStatus} onChange={(e) => setSelectedStatus(e.target.value)} className="rounded-lg border border-slate-200 px-2.5 py-1 bg-slate-50">
+                  <option value="all">All Statuses</option>
+                  {['Submitted', 'Under Review', 'Assigned', 'In Progress', 'Resolved', 'Closed'].map((status) => (
+                    <option key={status} value={status}>{status}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex items-center space-x-1.5 font-semibold text-slate-700">
+                <span>From:</span>
+                <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="rounded-lg border border-slate-200 px-2 py-1 bg-slate-50" />
+                <span>To:</span>
+                <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="rounded-lg border border-slate-200 px-2 py-1 bg-slate-50" />
+              </div>
+            </>
+          )}
         </div>
 
         {/* Right: Layer Mode Switches */}

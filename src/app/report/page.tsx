@@ -28,6 +28,7 @@ import {
   notifyComplaintSubmitted, 
   notifyCaptainHighPriorityAlert 
 } from '@/lib/smsService';
+import { useAuth } from '@/context/AuthContext';
 
 const LeafletMap = dynamic(() => import('@/components/Map/LeafletMap'), {
   ssr: false,
@@ -39,6 +40,7 @@ const LeafletMap = dynamic(() => import('@/components/Map/LeafletMap'), {
 });
 
 export default function ReportPage() {
+  const { user } = useAuth();
   const [categories, setCategories] = useState<Category[]>(DEFAULT_CATEGORIES);
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
@@ -234,6 +236,11 @@ export default function ReportPage() {
       is_duplicate_flagged: isBypassedDuplicate,
       duplicate_of_id: isBypassedDuplicate && matchedRef ? matchedRef : undefined,
       duplicate_similarity_score: isBypassedDuplicate ? duplicateAlert.similarityScore / 100 : undefined,
+      status_history: [{
+        status: 'Submitted',
+        changed_at: new Date().toISOString(),
+        changed_by: user?.full_name || name || 'Resident'
+      }],
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString()
     };
@@ -260,6 +267,7 @@ export default function ReportPage() {
       try {
         const { error } = await supabase.from('complaints').insert({
           tracking_number: trackingCode,
+          resident_id: user && /^[0-9a-f-]{36}$/i.test(user.id) ? user.id : null,
           title,
           description,
           location_address: 'Barangay Hibao-an Sur, Mandurriao, Iloilo City',
@@ -274,6 +282,7 @@ export default function ReportPage() {
           is_minor_flagged: aiResult?.involves_minor || false,
           is_duplicate_flagged: isBypassedDuplicate,
           duplicate_of_id: isBypassedDuplicate && matchedRef ? matchedRef : null,
+          status_history: newComplaintRecord.status_history,
           attachments: attachedImage ? [{ name: imageFileName, data: attachedImage }] : []
         });
 
@@ -316,7 +325,7 @@ export default function ReportPage() {
       <div>
         <div className="inline-flex items-center space-x-1.5 text-blue-700 bg-blue-50 px-2.5 py-0.5 rounded-full text-xs font-semibold mb-2">
           <Shield className="w-3.5 h-3.5" />
-          <span>Barangay Hibao-an Sur Citizen Reporting Portal</span>
+          <span>Barangay Hibao-an Sur Resident Reporting</span>
         </div>
         <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
           File a Community Concern or Complaint

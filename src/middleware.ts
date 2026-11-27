@@ -3,11 +3,10 @@ import type { NextRequest } from 'next/server';
 
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
+  const roleCookie = request.cookies.get('cv_user_role')?.value;
 
   // Protect all /admin/* routes
   if (pathname.startsWith('/admin')) {
-    const roleCookie = request.cookies.get('cv_user_role')?.value;
-
     // Allowed official roles for staff administration
     const authorizedRoles = ['staff', 'official', 'admin'];
 
@@ -20,9 +19,32 @@ export function middleware(request: NextRequest) {
     }
   }
 
+  if (pathname.startsWith('/map')) {
+    if (!roleCookie) {
+      const loginUrl = new URL('/login', request.url);
+      loginUrl.searchParams.set('error', 'authentication_required');
+      return NextResponse.redirect(loginUrl);
+    }
+    if (roleCookie === 'resident') {
+      return NextResponse.redirect(new URL('/resident/dashboard', request.url));
+    }
+  }
+
+  if (pathname.startsWith('/resident')) {
+    if (!roleCookie) {
+      const loginUrl = new URL('/login', request.url);
+      loginUrl.searchParams.set('error', 'authentication_required');
+      loginUrl.searchParams.set('redirect', pathname);
+      return NextResponse.redirect(loginUrl);
+    }
+    if (roleCookie !== 'resident') {
+      return NextResponse.redirect(new URL('/admin/dashboard', request.url));
+    }
+  }
+
   return NextResponse.next();
 }
 
 export const config = {
-  matcher: ['/admin/:path*'],
+  matcher: ['/admin/:path*', '/map/:path*', '/resident/:path*'],
 };

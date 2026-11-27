@@ -43,12 +43,20 @@ export default function Navbar() {
   );
 
   const navLinks = [
-    { href: '/', label: 'Overview', icon: Building2 },
-    { href: '/report', label: 'File Concern', icon: PlusCircle },
-    { href: '/track', label: 'Track Status', icon: Search },
-    { href: '/certificates', label: 'Certificates', icon: FileText },
-    { href: '/map', label: isStaffOrOfficial ? 'Incident Map' : 'My Map', icon: MapPin },
-    { href: '/admin/dashboard', label: 'Barangay Portal', icon: LayoutDashboard },
+    isStaffOrOfficial
+      ? { href: '/admin/dashboard', label: 'Staff Overview', icon: LayoutDashboard }
+      : { href: '/resident/dashboard', label: 'Resident Overview', icon: Building2 },
+    ...(isStaffOrOfficial
+      ? [
+          { href: '/admin/dashboard?tab=complaints', label: 'Complaints', icon: Search },
+          { href: '/admin/dashboard?tab=certificates', label: 'Requests', icon: FileText },
+          { href: '/map', label: 'Incident Map', icon: MapPin },
+        ]
+      : [
+          { href: '/track', label: 'My Complaints', icon: Search },
+          { href: '/certificates', label: 'My Requests', icon: FileText },
+          { href: '/report', label: 'File Concern', icon: PlusCircle },
+        ]),
   ];
 
   return (
@@ -74,8 +82,10 @@ export default function Navbar() {
               </span>
               <button
                 onClick={async () => {
+                  if (!window.confirm('Are you sure you want to log out?')) return;
                   await logout();
-                  router.push('/login');
+                  router.replace('/login');
+                  router.refresh();
                 }}
                 className="text-slate-400 hover:text-white flex items-center gap-1 pl-1"
                 title="Sign Out"
@@ -112,7 +122,9 @@ export default function Navbar() {
           <div>
             <span className="font-bold text-base sm:text-lg text-slate-900 tracking-tight flex items-center gap-1.5 whitespace-nowrap">
               CommunityVoice
-              <span className="text-[10px] font-semibold uppercase bg-blue-100 text-blue-800 px-1.5 py-0.5 rounded">Smart LGU</span>
+              {isStaffOrOfficial && (
+                <span className="text-[10px] font-semibold uppercase bg-blue-100 text-blue-800 px-1.5 py-0.5 rounded">Staff</span>
+              )}
             </span>
             <p className="text-[11px] text-slate-500 whitespace-nowrap hidden sm:block">Hibao-an Sur Feedback & Routing</p>
           </div>
@@ -210,13 +222,15 @@ export default function Navbar() {
           </div>
 
           {/* Primary Action Button */}
-          <Link
-            href="/report"
-            className="inline-flex items-center space-x-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs sm:text-sm font-medium px-3 sm:px-4 py-2 rounded-lg shadow-sm transition-all shadow-blue-500/20 whitespace-nowrap shrink-0"
-          >
-            <PlusCircle className="w-4 h-4 shrink-0" />
-            <span className="whitespace-nowrap">Report Concern</span>
-          </Link>
+          {!isStaffOrOfficial && (
+            <Link
+              href="/report"
+              className="inline-flex items-center space-x-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs sm:text-sm font-medium px-3 sm:px-4 py-2 rounded-lg shadow-sm transition-all shadow-blue-500/20 whitespace-nowrap shrink-0"
+            >
+              <PlusCircle className="w-4 h-4 shrink-0" />
+              <span className="whitespace-nowrap">Report Concern</span>
+            </Link>
+          )}
 
           {/* Mobile Menu Toggle Button */}
           <button

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import dynamic from 'next/dynamic';
 import { 
   CheckCircle, 
@@ -55,7 +55,7 @@ const LeafletMap = dynamic(() => import('@/components/Map/LeafletMap'), {
 export default function AdminDashboardPage() {
   const router = useRouter();
   const { user, loading: authLoading } = useAuth();
-  const [activeTab, setActiveTab] = useState<'complaints' | 'blotter' | 'certificates' | 'projects' | 'tanod' | 'analytics' | 'swdo' | 'users'>('complaints');
+  const [activeTab, setActiveTab] = useState<'overview' | 'complaints' | 'blotter' | 'certificates' | 'projects' | 'tanod' | 'analytics' | 'swdo' | 'users'>('overview');
   const [complaints, setComplaints] = useState<Complaint[]>(INITIAL_COMPLAINTS);
   const [certificates, setCertificates] = useState<CertificateRequest[]>(INITIAL_CERTIFICATES);
   const [blotterRecords, setBlotterRecords] = useState<BlotterRecord[]>(INITIAL_BLOTTER);
@@ -110,6 +110,50 @@ export default function AdminDashboardPage() {
   const [newUserRole, setNewUserRole] = useState<UserRole>('resident');
   const [newUserAddress, setNewUserAddress] = useState('Zone 1 (Near Iglesia ni Cristo Church / Main Road Area), Hibao-an Sur, Iloilo City');
   const [userSearchQuery, setUserSearchQuery] = useState('');
+  const [reportPeriod, setReportPeriod] = useState<'daily' | 'monthly' | 'yearly'>('monthly');
+  const [selectedReportYear, setSelectedReportYear] = useState(new Date().getFullYear());
+  const [reportDate, setReportDate] = useState(new Date().toISOString().slice(0, 10));
+
+  const periodComplaints = useMemo(() => {
+    return complaints.filter((complaint) => {
+      const date = new Date(complaint.created_at);
+      if (Number.isNaN(date.getTime())) return false;
+      if (reportPeriod === 'daily') {
+        return date.toISOString().slice(0, 10) === reportDate;
+      }
+      if (reportPeriod === 'monthly') {
+        return date.getUTCFullYear() === selectedReportYear
+          && String(date.getUTCMonth() + 1).padStart(2, '0') === reportDate.slice(5, 7);
+      }
+      return date.getUTCFullYear() === selectedReportYear;
+    });
+  }, [complaints, reportPeriod, reportDate, selectedReportYear]);
+
+  const periodAnalytics = useMemo(() => {
+    const validResponseTimes = periodComplaints
+      .filter((item) => item.created_at && item.first_official_response_at)
+      .map((item) => new Date(item.first_official_response_at!).getTime() - new Date(item.created_at).getTime())
+      .filter((duration) => duration >= 0);
+    const validResolutionTimes = periodComplaints
+      .filter((item) => item.status === 'Resolved' || item.status === 'Closed')
+      .filter((item) => item.created_at && item.resolved_at)
+      .map((item) => new Date(item.resolved_at!).getTime() - new Date(item.created_at).getTime())
+      .filter((duration) => duration >= 0);
+    const averageHours = (durations: number[]) => durations.length
+      ? durations.reduce((sum, duration) => sum + duration, 0) / durations.length / 3600000
+      : 0;
+    const resolved = periodComplaints.filter((item) => item.status === 'Resolved' || item.status === 'Closed').length;
+    const officialResponses = periodComplaints.filter((item) => item.first_official_response_at).length;
+    return {
+      averageResponseHours: averageHours(validResponseTimes),
+      averageResolutionHours: averageHours(validResolutionTimes),
+      resolutionRate: periodComplaints.length ? (resolved / periodComplaints.length) * 100 : 0,
+      officialResponseRate: periodComplaints.length ? (officialResponses / periodComplaints.length) * 100 : 0,
+      resolved,
+      pending: periodComplaints.filter((item) => item.status === 'Submitted' || item.status === 'Under Review').length,
+      ongoing: periodComplaints.filter((item) => item.status === 'Assigned' || item.status === 'In Progress').length,
+    };
+  }, [periodComplaints]);
 
   // Load complaints from localStorage and Supabase
   useEffect(() => {
@@ -598,15 +642,17 @@ export default function AdminDashboardPage() {
 
   // Export Report as CSV (Compatible with Excel)
   const handleExportCSV = () => {
-    const headers = ['Tracking Number', 'Title', 'Category', 'Priority', 'Status', 'Assigned To', 'Date Reported'];
-    const rows = complaints.map(c => [
+    const headers = ['Tracking Number', 'Title', 'Category', 'Priority', 'Status', 'Assigned To', 'Date Reported', 'First Official Response', 'Resolved At'];
+    const rows = periodComplaints.map(c => [
       `"${c.tracking_number}"`,
       `"${c.title.replace(/"/g, '""')}"`,
       `"${CATEGORIES.find(cat => cat.id === (c.ai_category_id || c.category_id))?.name || c.category_id}"`,
       `"${c.priority}"`,
       `"${c.status}"`,
       `"${c.assigned_to || 'Unassigned'}"`,
-      `"${new Date(c.created_at).toLocaleDateString()}"`
+      `"${new Date(c.created_at).toLocaleDateString()}"`,
+      `"${c.first_official_response_at ? new Date(c.first_official_response_at).toLocaleString() : ''}"`,
+      `"${c.resolved_at ? new Date(c.resolved_at).toLocaleString() : ''}"`
     ]);
 
     const csvContent = 'data:text/csv;charset=utf-8,\uFEFF' 
@@ -670,7 +716,12 @@ export default function AdminDashboardPage() {
           ...c,
           is_staff_confirmed: true,
           status: 'Assigned' as const,
-          assigned_to: assignedRole
+          assigned_to: assignedRole,
+          assigned_at: new Date().toISOString(),
+          status_history: [
+            ...(c.status_history || []),
+            { status: 'Assigned', changed_at: new Date().toISOString(), changed_by: user?.full_name || 'Barangay Staff' }
+          ]
         };
       }
       return c;
@@ -690,7 +741,8 @@ export default function AdminDashboardPage() {
         .update({
           status: 'Assigned',
           is_staff_confirmed: true,
-          assigned_to: assignedRole
+          assigned_to: assignedRole,
+          assigned_at: new Date().toISOString()
         })
         .eq('tracking_number', matched.tracking_number);
     }
@@ -720,7 +772,12 @@ export default function AdminDashboardPage() {
           ...c,
           priority: newPriority,
           is_staff_confirmed: true,
-          status: 'Assigned' as const
+          status: 'Assigned' as const,
+          assigned_at: c.assigned_at || new Date().toISOString(),
+          status_history: [
+            ...(c.status_history || []),
+            { status: 'Assigned', changed_at: new Date().toISOString(), changed_by: user?.full_name || 'Barangay Staff' }
+          ]
         };
       }
       return c;
@@ -769,7 +826,11 @@ export default function AdminDashboardPage() {
           status: 'Ready for Pickup' as const,
           approved_by: 'Hon. Punong Barangay (Barangay Captain)',
           approved_at: new Date().toISOString(),
-          remarks: 'Approved. Available at Window 1.'
+          remarks: 'Approved. Available at Window 1.',
+          status_history: [
+            ...(cert.status_history || []),
+            { status: 'Ready for Pickup', changed_at: new Date().toISOString(), changed_by: user?.full_name || 'Barangay Staff' }
+          ]
         };
       }
       return cert;
@@ -789,7 +850,8 @@ export default function AdminDashboardPage() {
         .update({
           status: 'Ready for Pickup',
           approved_at: new Date().toISOString(),
-          remarks: 'Approved. Available at Window 1.'
+          remarks: 'Approved. Available at Window 1.',
+          status_history: updated.find(cert => cert.id === id)?.status_history
         })
         .eq('tracking_number', matched.tracking_number);
     }
@@ -859,6 +921,12 @@ export default function AdminDashboardPage() {
 
         {/* Navigation Tabs */}
         <div className="flex flex-wrap gap-1 bg-slate-100 p-1 rounded-xl text-xs font-semibold">
+          <button
+            onClick={() => setActiveTab('overview')}
+            className={`px-3 py-1.5 rounded-lg transition-all ${activeTab === 'overview' ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}
+          >
+            Overview
+          </button>
           <button
             onClick={() => setActiveTab('complaints')}
             className={`px-3 py-1.5 rounded-lg transition-all ${
@@ -937,6 +1005,49 @@ export default function AdminDashboardPage() {
         <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl text-xs flex items-center justify-between">
           <span>✓ {successBanner}</span>
           <span className="font-mono text-[10px] bg-emerald-100 px-1.5 py-0.5 rounded">Live Audit Logged</span>
+        </div>
+      )}
+
+      {activeTab === 'overview' && (
+        <div className="space-y-5">
+          <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+            {[
+              ['Total Complaints', complaints.length],
+              ['Pending Complaints', complaints.filter((c) => c.status === 'Submitted' || c.status === 'Under Review').length],
+              ['Processing', complaints.filter((c) => c.status === 'Assigned' || c.status === 'In Progress').length],
+              ['Resolved', complaints.filter((c) => c.status === 'Resolved' || c.status === 'Closed').length],
+              ['Resident Requests', certificates.length],
+            ].map(([label, value]) => (
+              <div key={String(label)} className="bg-white border border-slate-200 rounded-2xl p-4">
+                <p className="text-[11px] text-slate-500">{label}</p>
+                <p className="text-2xl font-extrabold text-slate-900 mt-1">{value}</p>
+              </div>
+            ))}
+          </div>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <section className="bg-white border border-slate-200 rounded-2xl p-5">
+              <h2 className="font-bold text-slate-900 mb-3">Recently Submitted Complaints</h2>
+              <div className="space-y-2">
+                {[...complaints].sort((a, b) => b.created_at.localeCompare(a.created_at)).slice(0, 5).map((c) => (
+                  <button key={c.id} onClick={() => setActiveTab('complaints')} className="w-full text-left p-3 border border-slate-100 rounded-xl hover:border-blue-200">
+                    <div className="flex justify-between gap-3"><span className="text-xs font-semibold">{c.title}</span><span className="text-[10px]">{c.status}</span></div>
+                    <p className="text-[10px] text-slate-400 mt-1 font-mono">{c.tracking_number}</p>
+                  </button>
+                ))}
+              </div>
+            </section>
+            <section className="bg-white border border-slate-200 rounded-2xl p-5">
+              <h2 className="font-bold text-slate-900 mb-3">Recently Submitted Requests</h2>
+              <div className="space-y-2">
+                {[...certificates].sort((a, b) => b.created_at.localeCompare(a.created_at)).slice(0, 5).map((c) => (
+                  <button key={c.id} onClick={() => setActiveTab('certificates')} className="w-full text-left p-3 border border-slate-100 rounded-xl hover:border-blue-200">
+                    <div className="flex justify-between gap-3"><span className="text-xs font-semibold">{c.purpose}</span><span className="text-[10px]">{c.status}</span></div>
+                    <p className="text-[10px] text-slate-400 mt-1 font-mono">{c.tracking_number}</p>
+                  </button>
+                ))}
+              </div>
+            </section>
+          </div>
         </div>
       )}
 
@@ -1019,8 +1130,23 @@ export default function AdminDashboardPage() {
                     </button>
                   </div>
                 ) : (
-                  <div className="pt-2 text-right text-[11px] text-slate-400 border-t border-slate-100">
-                    ✓ Confirmed by Staff • Currently being handled by: <strong className="text-slate-700">{c.assigned_to}</strong>
+                  <div className="pt-2 flex items-center justify-between gap-2 text-[11px] border-t border-slate-100">
+                    <span className="text-slate-400">✓ Confirmed by Staff • Currently handled by: <strong className="text-slate-700">{c.assigned_to}</strong></span>
+                    {c.status !== 'Resolved' && c.status !== 'Closed' ? (
+                      <button
+                        onClick={() => router.push(`/admin/resolution/${c.id}`)}
+                        className="px-3 py-1.5 rounded-lg bg-emerald-600 text-white font-bold"
+                      >
+                        Resolve & Report
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => router.push(`/admin/resolution/${c.id}`)}
+                        className="px-3 py-1.5 rounded-lg border border-emerald-300 text-emerald-700 font-bold"
+                      >
+                        View Resolution Report
+                      </button>
+                    )}
                   </div>
                 )}
               </div>
@@ -1756,7 +1882,27 @@ export default function AdminDashboardPage() {
             </div>
 
             {/* Export Buttons */}
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <select
+                value={reportPeriod}
+                onChange={(event) => setReportPeriod(event.target.value as 'daily' | 'monthly' | 'yearly')}
+                className="px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs font-semibold"
+              >
+                <option value="daily">Daily</option>
+                <option value="monthly">Monthly</option>
+                <option value="yearly">Yearly</option>
+              </select>
+              {reportPeriod === 'daily' && (
+                <input type="date" value={reportDate} onChange={(event) => setReportDate(event.target.value)} className="px-3 py-2 rounded-xl border border-slate-200 text-xs" />
+              )}
+              {reportPeriod !== 'daily' && (
+                <>
+                  {reportPeriod === 'monthly' && (
+                    <input type="month" value={reportDate.slice(0, 7)} onChange={(event) => setReportDate(`${event.target.value}-01`)} className="px-3 py-2 rounded-xl border border-slate-200 text-xs" />
+                  )}
+                  <input type="number" min="2020" max="2100" value={selectedReportYear} onChange={(event) => setSelectedReportYear(Number(event.target.value))} className="w-24 px-3 py-2 rounded-xl border border-slate-200 text-xs" />
+                </>
+              )}
               <button
                 type="button"
                 onClick={handleExportCSV}
@@ -1783,47 +1929,45 @@ export default function AdminDashboardPage() {
                 <span className="font-semibold uppercase tracking-wider text-[10px]">Total Recorded Incidents</span>
                 <Activity className="w-4 h-4 text-blue-600" />
               </div>
-              <div className="text-2xl font-black text-slate-900">{complaints.length + blotterRecords.length}</div>
+              <div className="text-2xl font-black text-slate-900">{periodComplaints.length}</div>
               <p className="text-[11px] text-slate-400">
-                {complaints.length} Online Complaints • {blotterRecords.length} Walk-in Blotters
+                {periodAnalytics.pending} Pending • {periodAnalytics.ongoing} Ongoing • {periodAnalytics.resolved} Resolved
               </p>
             </div>
 
             <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-2">
               <div className="flex justify-between items-center text-slate-500">
-                <span className="font-semibold uppercase tracking-wider text-[10px]">High-Priority Hazard Index</span>
+                <span className="font-semibold uppercase tracking-wider text-[10px]">Average Response Time</span>
                 <AlertTriangle className="w-4 h-4 text-rose-500" />
               </div>
               <div className="text-2xl font-black text-rose-600">
-                {complaints.filter(c => c.priority === 'High').length} Urgent Cases
+                {periodAnalytics.averageResponseHours ? `${periodAnalytics.averageResponseHours.toFixed(1)}h` : 'N/A'}
               </div>
               <p className="text-[11px] text-slate-400">
-                Immediate dispatch to Kagawad / BPSO
+                From submission to first official response
               </p>
             </div>
 
             <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-2">
               <div className="flex justify-between items-center text-slate-500">
-                <span className="font-semibold uppercase tracking-wider text-[10px]">Resolution & Routing Rate</span>
+                <span className="font-semibold uppercase tracking-wider text-[10px]">Resolution Rate</span>
                 <TrendingUp className="w-4 h-4 text-emerald-600" />
               </div>
               <div className="text-2xl font-black text-emerald-600">
-                {complaints.length > 0 
-                  ? Math.round((complaints.filter(c => c.is_staff_confirmed).length / complaints.length) * 100)
-                  : 100}%
+                {periodAnalytics.resolutionRate.toFixed(1)}%
               </div>
               <p className="text-[11px] text-slate-400">
-                {complaints.filter(c => c.is_staff_confirmed).length} Assigned or Settled
+                Avg. resolution: {periodAnalytics.averageResolutionHours ? `${periodAnalytics.averageResolutionHours.toFixed(1)}h` : 'N/A'}
               </p>
             </div>
 
             <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-2">
               <div className="flex justify-between items-center text-slate-500">
-                <span className="font-semibold uppercase tracking-wider text-[10px]">Document Requests Processed</span>
+                <span className="font-semibold uppercase tracking-wider text-[10px]">Official Response Rate</span>
                 <FileCheck className="w-4 h-4 text-indigo-600" />
               </div>
               <div className="text-2xl font-black text-indigo-600">
-                {certificates.filter(c => c.status === 'Ready for Pickup').length} / {certificates.length}
+                {periodAnalytics.officialResponseRate.toFixed(1)}%
               </div>
               <p className="text-[11px] text-slate-400">
                 Indigency, Residency, Barangay IDs

@@ -5,7 +5,7 @@ import { Search, Clock, CheckCircle2, AlertCircle, Shield, ArrowRight, Lock, Fil
 import { INITIAL_COMPLAINTS, INITIAL_CERTIFICATES } from '@/lib/mockData';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase/client';
 import { useAuth } from '@/context/AuthContext';
-import { Complaint, CertificateRequest } from '@/lib/types';
+import { Complaint, CertificateRequest, ConversationMessage } from '@/lib/types';
 
 export default function TrackPage() {
   const { user } = useAuth();
@@ -20,6 +20,8 @@ export default function TrackPage() {
     type: 'complaint' | 'certificate';
     status: string;
   }[]>([]);
+  const [messages, setMessages] = useState<ConversationMessage[]>([]);
+  const [messageDraft, setMessageDraft] = useState('');
 
   const isStaffOrOfficial = Boolean(
     user && (user.role === 'staff' || user.role === 'official' || user.role === 'admin')
@@ -222,6 +224,89 @@ export default function TrackPage() {
     executeSearch(query);
   };
 
+  useEffect(() => {
+    if (!result?.tracking_number) {
+      setMessages([]);
+      return;
+    }
+    async function loadMessages() {
+      let combined: ConversationMessage[] = [];
+      try {
+        const all: ConversationMessage[] = JSON.parse(localStorage.getItem('cv_record_messages') || '[]');
+        combined = all.filter((item) => item.tracking_number === result.tracking_number);
+      } catch {}
+
+      if (isSupabaseConfigured && supabase) {
+        const { data, error } = await supabase
+          .from('record_messages')
+          .select('*')
+          .eq('tracking_number', result.tracking_number)
+          .order('created_at', { ascending: true });
+        if (!error && data) {
+          const remote = data.map((item: any) => ({
+            id: item.id,
+            record_type: item.record_type,
+            tracking_number: item.tracking_number,
+            sender_id: item.sender_id,
+            sender_name: item.sender_name || 'Barangay User',
+            sender_role: item.sender_role || 'staff',
+            message: item.message,
+            created_at: item.created_at,
+          })) as ConversationMessage[];
+          combined = [...combined.filter((item) => !remote.some((remoteItem) => remoteItem.created_at === item.created_at && remoteItem.message === item.message)), ...remote];
+        }
+      }
+      setMessages(combined);
+    }
+    loadMessages();
+  }, [result]);
+
+  const sendMessage = async () => {
+    const text = messageDraft.trim();
+    if (!result?.tracking_number || !text || !user) return;
+    const message: ConversationMessage = {
+      id: `msg-${Date.now()}`,
+      record_type: result.type === 'complaint' ? 'complaint' : 'request',
+      tracking_number: result.tracking_number,
+      sender_id: user.id,
+      sender_name: user.full_name,
+      sender_role: user.role,
+      message: text,
+      created_at: new Date().toISOString(),
+    };
+    const all: ConversationMessage[] = JSON.parse(localStorage.getItem('cv_record_messages') || '[]');
+    localStorage.setItem('cv_record_messages', JSON.stringify([...all, message]));
+    setMessages((current) => [...current, message]);
+    setMessageDraft('');
+    if (isSupabaseConfigured && supabase && /^[0-9a-f-]{36}$/i.test(user.id)) {
+      try {
+        await supabase.from('record_messages').insert({
+          record_type: message.record_type,
+          tracking_number: message.tracking_number,
+          sender_id: message.sender_id,
+          sender_name: message.sender_name,
+          sender_role: message.sender_role,
+          message: message.message,
+        });
+        if (isStaffOrOfficial && message.record_type === 'complaint') {
+          const { data: complaint } = await supabase
+            .from('complaints')
+            .select('first_official_response_at')
+            .eq('tracking_number', message.tracking_number)
+            .maybeSingle();
+          if (complaint && !complaint.first_official_response_at) {
+            await supabase
+              .from('complaints')
+              .update({ first_official_response_at: message.created_at })
+              .eq('tracking_number', message.tracking_number);
+          }
+        }
+      } catch {
+        // Local persistence keeps the conversation available in demo/offline mode.
+      }
+    }
+  };
+
   const steps = ['Submitted', 'Under Review', 'Assigned', 'In Progress', 'Resolved', 'Closed'];
 
   return (
@@ -229,7 +314,7 @@ export default function TrackPage() {
       <div>
         <div className="inline-flex items-center space-x-1.5 text-blue-700 bg-blue-50 px-2.5 py-0.5 rounded-full text-xs font-semibold mb-2">
           <Shield className="w-3.5 h-3.5" />
-          <span>Barangay Hibao-an Sur Citizen Portal</span>
+          <span>Barangay Hibao-an Sur Resident Services</span>
         </div>
         <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900">
           {isStaffOrOfficial ? 'Track Barangay Submissions (Staff Audit)' : 'Track My Transactions'}
@@ -383,6 +468,64 @@ export default function TrackPage() {
               <p>{result.ai_justification}</p>
             </div>
           )}
+
+          {result.type === 'complaint' && result.resolution_report && (
+            <section className="p-5 border border-emerald-200 bg-emerald-50/60 rounded-2xl space-y-3">
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-bold text-emerald-900">Official Incident Resolution Report</h3>
+                <button
+                  onClick={() => window.print()}
+                  className="px-3 py-1.5 bg-white border border-emerald-300 text-emerald-800 rounded-lg text-xs font-bold"
+                >
+                  Print / PDF
+                </button>
+              </div>
+              <dl className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                <div><dt className="text-emerald-700">Assigned Official</dt><dd className="font-semibold">{result.resolution_report.assigned_official}</dd></div>
+                <div><dt className="text-emerald-700">Date Resolved</dt><dd className="font-semibold">{new Date(result.resolution_report.resolved_at).toLocaleString()}</dd></div>
+              </dl>
+              <p className="text-xs"><strong>Incident Summary:</strong> {result.resolution_report.incident_summary}</p>
+              <p className="text-xs"><strong>Actions Taken:</strong> {result.resolution_report.actions_taken}</p>
+              <p className="text-xs"><strong>Resolution Details:</strong> {result.resolution_report.resolution_details}</p>
+            </section>
+          )}
+
+          <section className="border border-slate-200 rounded-2xl overflow-hidden">
+            <div className="px-4 py-3 bg-slate-50 border-b border-slate-200">
+              <h3 className="text-sm font-bold text-slate-800">Communication</h3>
+              <p className="text-[11px] text-slate-500">Messages and progress updates for this submission</p>
+            </div>
+            <div className="max-h-72 overflow-y-auto p-4 space-y-3 bg-white">
+              {messages.length === 0 && (
+                <p className="text-xs text-slate-400 text-center py-6">No messages yet.</p>
+              )}
+              {messages.map((message) => (
+                <div key={message.id} className={`max-w-[85%] p-3 rounded-2xl text-xs ${
+                  message.sender_id === user?.id ? 'ml-auto bg-blue-600 text-white' : 'mr-auto bg-slate-100 text-slate-800'
+                }`}>
+                  <p className="font-bold text-[11px]">{message.sender_name} · {message.sender_role}</p>
+                  <p className="mt-1 leading-relaxed">{message.message}</p>
+                  <p className={`mt-1 text-[9px] ${message.sender_id === user?.id ? 'text-blue-100' : 'text-slate-400'}`}>
+                    {new Date(message.created_at).toLocaleString()}
+                  </p>
+                </div>
+              ))}
+            </div>
+            {user && (
+              <div className="p-3 border-t border-slate-100 flex gap-2">
+                <input
+                  value={messageDraft}
+                  onChange={(e) => setMessageDraft(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') sendMessage(); }}
+                  placeholder="Write a message..."
+                  className="flex-1 px-3 py-2 text-xs border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                />
+                <button onClick={sendMessage} className="px-4 py-2 bg-blue-600 text-white rounded-xl text-xs font-bold">
+                  Send
+                </button>
+              </div>
+            )}
+          </section>
         </div>
       ) : !isAccessDenied && (
         <div className="text-center py-12 bg-white rounded-2xl border border-slate-200">

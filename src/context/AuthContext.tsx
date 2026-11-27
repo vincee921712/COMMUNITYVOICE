@@ -16,7 +16,7 @@ export interface UserProfile {
 interface AuthContextType {
   user: UserProfile | null;
   loading: boolean;
-  login: (email: string, password?: string, role?: UserRole) => Promise<void>;
+  login: (email: string, password?: string, role?: UserRole) => Promise<UserProfile>;
   logout: () => Promise<void>;
   register: (fullName: string, email: string, role: UserRole, phone?: string, password?: string) => Promise<void>;
 }
@@ -76,10 +76,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         document.cookie = 'cv_user_role=; path=/; max-age=0';
       }
     } else {
-      // Default initial mock demo user
-      const defaultUser = DEMO_USERS['resident@hibaoan.gov.ph'];
-      setUser(defaultUser);
-      document.cookie = `cv_user_role=${defaultUser.role}; path=/; max-age=604800; SameSite=Lax`;
+      setUser(null);
+      document.cookie = 'cv_user_role=; path=/; max-age=0';
     }
     setLoading(false);
   }, []);
@@ -116,7 +114,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             setUser(loggedInProfile);
             localStorage.setItem('cv_current_user', JSON.stringify(loggedInProfile));
             document.cookie = `cv_user_role=${loggedInProfile.role}; path=/; max-age=604800; SameSite=Lax`;
-            return;
+            return loggedInProfile;
           }
         } catch {
           // Fall back gracefully to local/demo resolution
@@ -144,6 +142,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setUser(matched);
       localStorage.setItem('cv_current_user', JSON.stringify(matched));
       document.cookie = `cv_user_role=${matched.role}; path=/; max-age=604800; SameSite=Lax`;
+      return matched;
     } finally {
       setLoading(false);
     }

@@ -20,11 +20,12 @@ export default function LoginPage() {
     e.preventDefault();
     setIsLoading(true);
     try {
-      await login(email, password, role);
-      if (role === 'staff' || role === 'official' || role === 'admin') {
-        router.push('/admin/dashboard');
+      const authenticatedUser = await login(email, password, role);
+      const authenticatedRole = authenticatedUser.role;
+      if (authenticatedRole === 'staff' || authenticatedRole === 'official' || authenticatedRole === 'admin') {
+        router.replace('/admin/dashboard');
       } else {
-        router.push('/');
+        router.replace('/resident/dashboard');
       }
     } finally {
       setIsLoading(false);
@@ -53,7 +54,7 @@ export default function LoginPage() {
           </div>
           <h2 className="text-2xl font-extrabold text-slate-900 tracking-tight">Sign in to CommunityVoice</h2>
           <p className="text-xs text-slate-500">
-            Official Portal • Barangay Hibao-an Sur, Mandurriao, Iloilo City
+            Barangay Hibao-an Sur, Mandurriao, Iloilo City
           </p>
         </div>
 
@@ -149,7 +150,7 @@ export default function LoginPage() {
             disabled={isLoading}
             className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl shadow-md shadow-blue-500/20 transition-all text-xs flex items-center justify-center space-x-1.5 cursor-pointer disabled:opacity-50"
           >
-            <span>{isLoading ? 'Authenticating...' : 'Sign In to Portal'}</span>
+            <span>{isLoading ? 'Authenticating...' : 'Sign In'}</span>
             <ArrowRight className="w-4 h-4" />
           </button>
         </form>
