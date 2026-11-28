@@ -15,13 +15,18 @@ export async function middleware(request: NextRequest) {
   const isAdminRoute = pathname.startsWith('/admin');
   const isMapRoute = pathname.startsWith('/map');
   const isResidentRoute = pathname.startsWith('/resident');
-  if (!isAdminRoute && !isMapRoute && !isResidentRoute) return NextResponse.next();
+  const isProtectedUserRoute =
+    pathname.startsWith('/report') ||
+    pathname.startsWith('/certificates') ||
+    pathname.startsWith('/track');
+  if (!isAdminRoute && !isMapRoute && !isResidentRoute && !isProtectedUserRoute) return NextResponse.next();
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
   if (!supabaseUrl || !supabaseAnonKey) {
     if (process.env.NODE_ENV === 'development') {
       const demoRole = request.cookies.get('cv_user_role')?.value;
+      if (isProtectedUserRoute && demoRole) return NextResponse.next();
       const isStaff = ['staff', 'official', 'admin'].includes(demoRole || '');
       if ((isAdminRoute || isMapRoute) && isStaff) return NextResponse.next();
       if (isResidentRoute && demoRole === 'resident') return NextResponse.next();
@@ -69,5 +74,5 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/admin/:path*', '/map/:path*', '/resident/:path*'],
+  matcher: ['/admin/:path*', '/map/:path*', '/resident/:path*', '/report/:path*', '/certificates/:path*', '/track/:path*'],
 };

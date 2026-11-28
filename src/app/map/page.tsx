@@ -36,9 +36,9 @@ const LeafletMap = dynamic(() => import('@/components/Map/LeafletMap'), {
 
 export default function MapPage() {
   const router = useRouter();
-  const { user } = useAuth();
-  const [complaints, setComplaints] = useState<Complaint[]>(INITIAL_COMPLAINTS);
-  const [projects, setProjects] = useState<BarangayProject[]>(INITIAL_PROJECTS);
+  const { user, loading } = useAuth();
+  const [complaints, setComplaints] = useState<Complaint[]>([]);
+  const [projects, setProjects] = useState<BarangayProject[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [selectedPriority, setSelectedPriority] = useState<string>('all');
   const [showProjects, setShowProjects] = useState<boolean>(true);
@@ -74,6 +74,7 @@ export default function MapPage() {
   }, []);
 
   useEffect(() => {
+    if (!user || !isStaffOrOfficial) return;
     async function loadAllComplaints() {
       let combined: Complaint[] = [...INITIAL_COMPLAINTS];
 
@@ -134,7 +135,7 @@ export default function MapPage() {
 
     loadAllComplaints();
     loadAllProjects();
-  }, []);
+  }, [user, isStaffOrOfficial]);
 
   // Quick jump zones in Barangay Hibao-an Sur (Official Jurisdiction)
   const [selectedZoneFilter, setSelectedZoneFilter] = useState<string>('all');
@@ -192,6 +193,37 @@ export default function MapPage() {
     if (dateTo && new Date(c.created_at).toISOString().slice(0, 10) > dateTo) return false;
     return true;
   });
+
+  if (loading) return null;
+
+  if (!user) {
+    return (
+      <div className="min-h-[70vh] flex items-center justify-center px-4 py-16">
+        <div className="max-w-md w-full bg-white p-8 rounded-3xl border border-slate-200 shadow-xl text-center space-y-4">
+          <div className="w-14 h-14 bg-blue-100 text-blue-700 rounded-2xl flex items-center justify-center mx-auto">
+            <Lock className="w-7 h-7" />
+          </div>
+          <h1 className="text-xl font-bold text-slate-900">Staff sign in required</h1>
+          <p className="text-sm text-slate-500">Incident map data is restricted to signed-in barangay staff and officials.</p>
+          <Link href="/login" className="block w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl text-sm">
+            Sign In
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
+  if (!isStaffOrOfficial) {
+    return (
+      <div className="min-h-[70vh] flex items-center justify-center px-4 py-16">
+        <div className="max-w-md w-full bg-white p-8 rounded-3xl border border-slate-200 shadow-xl text-center">
+          <Lock className="w-8 h-8 text-rose-600 mx-auto mb-3" />
+          <h1 className="text-xl font-bold text-slate-900">Barangay staff access only</h1>
+          <p className="text-sm text-slate-500 mt-2">Resident accounts cannot access incident map data.</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">

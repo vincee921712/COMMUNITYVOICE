@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useMemo } from 'react';
+import Link from 'next/link';
 import { FileText, CheckCircle2, Clock, AlertCircle, PlusCircle, Building, ShieldCheck, Lock } from 'lucide-react';
 import { INITIAL_CERTIFICATES } from '@/lib/mockData';
 import { CertificateRequest, CertificateType } from '@/lib/types';
@@ -9,8 +10,8 @@ import { useAuth } from '@/context/AuthContext';
 import { notifyCertificateSubmitted } from '@/lib/smsService';
 
 export default function CertificatesPage() {
-  const { user } = useAuth();
-  const [requests, setRequests] = useState<CertificateRequest[]>(isSupabaseConfigured ? [] : INITIAL_CERTIFICATES);
+  const { user, loading } = useAuth();
+  const [requests, setRequests] = useState<CertificateRequest[]>([]);
   const [certType, setCertType] = useState<CertificateType>('certificate_of_indigency');
   const [name, setName] = useState(user?.full_name || '');
   const [purpose, setPurpose] = useState('');
@@ -42,6 +43,10 @@ export default function CertificatesPage() {
   useEffect(() => {
     let active = true;
     async function loadCertificates() {
+      if (!user) {
+        if (active) setRequests([]);
+        return;
+      }
       if (isSupabaseConfigured && supabase) {
         if (!user) {
           if (active) setRequests([]);
@@ -208,6 +213,25 @@ export default function CertificatesPage() {
       return false;
     });
   }, [requests, isStaffOrOfficial, user, myTrackings]);
+
+  if (loading) return null;
+
+  if (!user) {
+    return (
+      <div className="min-h-[70vh] flex items-center justify-center px-4 py-16">
+        <div className="max-w-md w-full bg-white p-8 rounded-3xl border border-slate-200 shadow-xl text-center space-y-4">
+          <div className="w-14 h-14 bg-blue-100 text-blue-700 rounded-2xl flex items-center justify-center mx-auto">
+            <Lock className="w-7 h-7" />
+          </div>
+          <h1 className="text-xl font-bold text-slate-900">Sign in required</h1>
+          <p className="text-sm text-slate-500">Sign in to view or request barangay documents.</p>
+          <Link href="/login" className="block w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl text-sm">
+            Sign In
+          </Link>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-5xl mx-auto px-4 sm:px-6 py-10 space-y-10">

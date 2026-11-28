@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useMemo } from 'react';
+import Link from 'next/link';
 import { Search, Clock, CheckCircle2, AlertCircle, Shield, ArrowRight, Lock, FileText, AlertTriangle } from 'lucide-react';
 import { INITIAL_COMPLAINTS, INITIAL_CERTIFICATES } from '@/lib/mockData';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase/client';
@@ -17,9 +18,9 @@ interface TrackingOwnershipRecord {
 }
 
 export default function TrackPage() {
-  const { user } = useAuth();
+  const { user, loading } = useAuth();
   const [query, setQuery] = useState('CV-2026-001');
-  const [result, setResult] = useState<TrackRecord | null>({ type: 'complaint', ...INITIAL_COMPLAINTS[0] });
+  const [result, setResult] = useState<TrackRecord | null>(null);
   const [isSearching, setIsSearching] = useState(false);
   const [isAccessDenied, setIsAccessDenied] = useState(false);
   const [myTrackings, setMyTrackings] = useState<string[]>([]);
@@ -81,7 +82,7 @@ export default function TrackPage() {
     } catch {}
 
     // Initial mock data belonging to demo resident Maria Santos
-    if (user?.email === 'resident@hibaoan.gov.ph' || !user || user.role === 'resident') {
+    if (user && (user.email === 'resident@hibaoan.gov.ph' || user.role === 'resident')) {
       items.push({
         tracking_number: 'CV-2026-001',
         title: 'Dangling Low Electrical Wire over Pathway',
@@ -320,6 +321,25 @@ export default function TrackPage() {
   };
 
   const steps = ['Submitted', 'Under Review', 'Assigned', 'In Progress', 'Resolved', 'Closed'];
+
+  if (loading) return null;
+
+  if (!user) {
+    return (
+      <div className="min-h-[70vh] flex items-center justify-center px-4 py-16">
+        <div className="max-w-md w-full bg-white p-8 rounded-3xl border border-slate-200 shadow-xl text-center space-y-4">
+          <div className="w-14 h-14 bg-blue-100 text-blue-700 rounded-2xl flex items-center justify-center mx-auto">
+            <Lock className="w-7 h-7" />
+          </div>
+          <h1 className="text-xl font-bold text-slate-900">Sign in required</h1>
+          <p className="text-sm text-slate-500">Sign in to search and view protected complaint or certificate records.</p>
+          <Link href="/login" className="block w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl text-sm">
+            Sign In
+          </Link>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-4xl mx-auto px-4 sm:px-6 py-10 space-y-8">

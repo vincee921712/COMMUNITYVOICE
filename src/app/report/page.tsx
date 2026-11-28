@@ -2,6 +2,7 @@
 
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import dynamic from 'next/dynamic';
+import Link from 'next/link';
 import { 
   PlusCircle, 
   Sparkles, 
@@ -14,7 +15,8 @@ import {
   PhoneCall,
   ExternalLink,
   Eye,
-  Info
+  Info,
+  Lock
 } from 'lucide-react';
 import { CATEGORIES as DEFAULT_CATEGORIES } from '@/lib/mockData';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase/client';
@@ -40,7 +42,7 @@ const LeafletMap = dynamic(() => import('@/components/Map/LeafletMap'), {
 });
 
 export default function ReportPage() {
-  const { user } = useAuth();
+  const { user, loading } = useAuth();
   const [categories, setCategories] = useState<Category[]>(DEFAULT_CATEGORIES);
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
@@ -78,6 +80,7 @@ export default function ReportPage() {
 
   // Fetch live categories and existing active complaints on mount
   useEffect(() => {
+    if (!user) return;
     async function loadInitialData() {
       if (isSupabaseConfigured && supabase) {
         try {
@@ -99,7 +102,7 @@ export default function ReportPage() {
       }
     }
     loadInitialData();
-  }, []);
+  }, [user]);
 
   // Compute real-time proximity warning whenever pin, category, title, or description changes
   const duplicateAlert: DuplicateDetectionResult = useMemo(() => {
@@ -325,6 +328,25 @@ export default function ReportPage() {
       setIsSubmitting(false);
     }
   };
+
+  if (loading) return null;
+
+  if (!user) {
+    return (
+      <div className="min-h-[70vh] flex items-center justify-center px-4 py-16">
+        <div className="max-w-md w-full bg-white p-8 rounded-3xl border border-slate-200 shadow-xl text-center space-y-4">
+          <div className="w-14 h-14 bg-blue-100 text-blue-700 rounded-2xl flex items-center justify-center mx-auto">
+            <Lock className="w-7 h-7" />
+          </div>
+          <h1 className="text-xl font-bold text-slate-900">Sign in required</h1>
+          <p className="text-sm text-slate-500">Sign in or register as a resident before filing a community concern.</p>
+          <Link href="/login" className="block w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl text-sm">
+            Sign In
+          </Link>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-4xl mx-auto px-4 sm:px-6 py-10 space-y-8">

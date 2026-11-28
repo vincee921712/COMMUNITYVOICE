@@ -67,13 +67,17 @@ export default function Navbar() {
         { href: '/admin/dashboard?tab=certificates', label: 'Requests', icon: FileText },
         { href: '/map', label: 'Incident Map', icon: MapPin },
       ]
-    : [
-        { href: '/', label: 'Community Overview', icon: Building2 },
-        { href: '/resident/dashboard', label: 'My Dashboard', icon: LayoutDashboard },
-        { href: '/track', label: 'My Complaints', icon: Search },
-        { href: '/certificates', label: 'My Requests', icon: FileText },
-        { href: '/report', label: 'File Concern', icon: PlusCircle },
-      ];
+    : user
+      ? [
+          { href: '/', label: 'Community Overview', icon: Building2 },
+          { href: '/resident/dashboard', label: 'My Dashboard', icon: LayoutDashboard },
+          { href: '/track', label: 'My Complaints', icon: Search },
+          { href: '/certificates', label: 'My Requests', icon: FileText },
+          { href: '/report', label: 'File Concern', icon: PlusCircle },
+        ]
+      : [
+          { href: '/', label: 'Community Overview', icon: Building2 },
+        ];
 
   return (
     <header className="sticky top-0 z-50 bg-white/95 backdrop-blur border-b border-slate-200">
