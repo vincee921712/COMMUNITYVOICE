@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useRef } from 'react';
+import type { LayerGroup, Map as LeafletMapInstance, LeafletMouseEvent } from 'leaflet';
 import { Complaint, BarangayProject } from '@/lib/types';
 
 interface LeafletMapProps {
@@ -27,9 +28,9 @@ export default function LeafletMap({
   tileStyle = 'osm'
 }: LeafletMapProps) {
   const mapContainerRef = useRef<HTMLDivElement>(null);
-  const mapInstanceRef = useRef<any>(null);
-  const markersLayerRef = useRef<any>(null);
-  const heatmapLayerRef = useRef<any>(null);
+  const mapInstanceRef = useRef<LeafletMapInstance | null>(null);
+  const markersLayerRef = useRef<LayerGroup | null>(null);
+  const heatmapLayerRef = useRef<LayerGroup | null>(null);
 
   useEffect(() => {
     let isMounted = true;
@@ -40,7 +41,7 @@ export default function LeafletMap({
       const L = (await import('leaflet')).default;
 
       // Leaflet default asset setup
-      delete (L.Icon.Default.prototype as any)._getIconUrl;
+      delete (L.Icon.Default.prototype as unknown as { _getIconUrl?: unknown })._getIconUrl;
       L.Icon.Default.mergeOptions({
         iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
         iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
@@ -69,7 +70,7 @@ export default function LeafletMap({
         markersLayerRef.current = L.layerGroup().addTo(map);
 
         if (interactiveSelect && onSelectLocation) {
-          map.on('click', (e: any) => {
+          map.on('click', (e: LeafletMouseEvent) => {
             const { lat, lng } = e.latlng;
             onSelectLocation(lat, lng);
           });

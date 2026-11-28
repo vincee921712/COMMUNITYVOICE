@@ -1,48 +1,71 @@
+import { createServerClient } from '@supabase/ssr';
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
-export function middleware(request: NextRequest) {
+function loginRedirect(request: NextRequest, reason: string, response?: NextResponse) {
+  const url = new URL('/login', request.url);
+  url.searchParams.set('error', reason);
+  const redirectResponse = NextResponse.redirect(url);
+  response?.cookies.getAll().forEach((cookie) => redirectResponse.cookies.set(cookie));
+  return redirectResponse;
+}
+
+export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
-  const roleCookie = request.cookies.get('cv_user_role')?.value;
+  const isAdminRoute = pathname.startsWith('/admin');
+  const isMapRoute = pathname.startsWith('/map');
+  const isResidentRoute = pathname.startsWith('/resident');
+  if (!isAdminRoute && !isMapRoute && !isResidentRoute) return NextResponse.next();
 
-  // Protect all /admin/* routes
-  if (pathname.startsWith('/admin')) {
-    // Allowed official roles for staff administration
-    const authorizedRoles = ['staff', 'official', 'admin'];
-
-    if (!roleCookie || !authorizedRoles.includes(roleCookie)) {
-      // Unauthorized or resident: redirect to login with access_denied query parameter
-      const loginUrl = new URL('/login', request.url);
-      loginUrl.searchParams.set('error', 'access_denied');
-      loginUrl.searchParams.set('redirect', pathname);
-      return NextResponse.redirect(loginUrl);
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (!supabaseUrl || !supabaseAnonKey) {
+    if (process.env.NODE_ENV === 'development') {
+      const demoRole = request.cookies.get('cv_user_role')?.value;
+      const isStaff = ['staff', 'official', 'admin'].includes(demoRole || '');
+      if ((isAdminRoute || isMapRoute) && isStaff) return NextResponse.next();
+      if (isResidentRoute && demoRole === 'resident') return NextResponse.next();
     }
+    return loginRedirect(request, 'authentication_required');
   }
 
-  if (pathname.startsWith('/map')) {
-    if (!roleCookie) {
-      const loginUrl = new URL('/login', request.url);
-      loginUrl.searchParams.set('error', 'authentication_required');
-      return NextResponse.redirect(loginUrl);
-    }
-    if (roleCookie === 'resident') {
-      return NextResponse.redirect(new URL('/resident/dashboard', request.url));
-    }
+  let response = NextResponse.next({ request });
+  const supabase = createServerClient(supabaseUrl, supabaseAnonKey, {
+    cookies: {
+      getAll() {
+        return request.cookies.getAll();
+      },
+      setAll(cookiesToSet) {
+        cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value));
+        response = NextResponse.next({ request });
+        cookiesToSet.forEach(({ name, value, options }) => response.cookies.set(name, value, options));
+      },
+    },
+  });
+
+  const { data: { user }, error: authError } = await supabase.auth.getUser();
+  if (authError || !user) return loginRedirect(request, 'authentication_required', response);
+
+  const { data: profile, error: profileError } = await supabase
+    .from('profiles')
+    .select('role')
+    .eq('id', user.id)
+    .maybeSingle();
+  if (profileError || !profile) return loginRedirect(request, 'profile_required', response);
+
+  const isStaff = ['staff', 'official', 'admin'].includes(profile.role);
+  if ((isAdminRoute || isMapRoute) && !isStaff) {
+    const redirectResponse = NextResponse.redirect(new URL('/resident/dashboard', request.url));
+    response.cookies.getAll().forEach((cookie) => redirectResponse.cookies.set(cookie));
+    return redirectResponse;
+  }
+  if (isResidentRoute && profile.role !== 'resident') {
+    const redirectResponse = NextResponse.redirect(new URL('/admin/dashboard', request.url));
+    response.cookies.getAll().forEach((cookie) => redirectResponse.cookies.set(cookie));
+    return redirectResponse;
   }
 
-  if (pathname.startsWith('/resident')) {
-    if (!roleCookie) {
-      const loginUrl = new URL('/login', request.url);
-      loginUrl.searchParams.set('error', 'authentication_required');
-      loginUrl.searchParams.set('redirect', pathname);
-      return NextResponse.redirect(loginUrl);
-    }
-    if (roleCookie !== 'resident') {
-      return NextResponse.redirect(new URL('/admin/dashboard', request.url));
-    }
-  }
-
-  return NextResponse.next();
+  return response;
 }
 
 export const config = {

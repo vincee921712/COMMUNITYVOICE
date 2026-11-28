@@ -35,6 +35,7 @@ export default function RootLayout({
                     src="/logo.png"
                     alt="CommunityVoice Logo"
                     fill
+                    sizes="32px"
                     className="object-cover"
                   />
                 </div>

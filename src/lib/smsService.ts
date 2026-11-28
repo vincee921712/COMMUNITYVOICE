@@ -55,6 +55,9 @@ export async function sendSmsDispatch(options: SmsDispatchOptions): Promise<Disp
     });
 
     const result = await res.json();
+    if (!res.ok || result.success !== true) {
+      throw new Error(result.error || 'SMS dispatch was rejected.');
+    }
 
     const record: DispatchedSms = {
       id: `sms-${Date.now()}-${Math.floor(Math.random() * 1000)}`,

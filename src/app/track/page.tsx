@@ -7,10 +7,19 @@ import { supabase, isSupabaseConfigured } from '@/lib/supabase/client';
 import { useAuth } from '@/context/AuthContext';
 import { Complaint, CertificateRequest, ConversationMessage } from '@/lib/types';
 
+type TrackRecord = (Complaint & { type: 'complaint' }) | (CertificateRequest & { type: 'certificate' });
+
+interface TrackingOwnershipRecord {
+  tracking_number?: string;
+  resident_name?: string;
+  resident_contact?: string;
+  contact_number?: string;
+}
+
 export default function TrackPage() {
   const { user } = useAuth();
   const [query, setQuery] = useState('CV-2026-001');
-  const [result, setResult] = useState<any>(INITIAL_COMPLAINTS[0]);
+  const [result, setResult] = useState<TrackRecord | null>({ type: 'complaint', ...INITIAL_COMPLAINTS[0] });
   const [isSearching, setIsSearching] = useState(false);
   const [isAccessDenied, setIsAccessDenied] = useState(false);
   const [myTrackings, setMyTrackings] = useState<string[]>([]);
@@ -104,11 +113,12 @@ export default function TrackPage() {
   }, [user]);
 
   // Check if a record belongs to the current logged-in resident
-  const verifyRecordOwnership = (record: any): boolean => {
+  const verifyRecordOwnership = (record: TrackingOwnershipRecord): boolean => {
     if (isStaffOrOfficial) return true; // Officials have oversight access
     if (!record) return false;
 
     const tracking = record.tracking_number?.toUpperCase();
+    if (!tracking) return false;
 
     // 1. In browser-tracked submissions
     if (myTrackings.map(t => t.toUpperCase()).includes(tracking)) return true;
@@ -139,14 +149,14 @@ export default function TrackPage() {
     setIsAccessDenied(false);
 
     try {
-      let foundRecord: any = null;
+      let foundRecord: TrackRecord | null = null;
 
       // 1. Check custom complaints saved in localStorage
       try {
         const stored = localStorage.getItem('cv_custom_complaints');
         if (stored) {
-          const locals = JSON.parse(stored);
-          const match = locals.find((c: any) => c.tracking_number?.toUpperCase() === cleanQuery);
+          const locals = JSON.parse(stored) as Complaint[];
+          const match = locals.find((c) => c.tracking_number?.toUpperCase() === cleanQuery);
           if (match) foundRecord = { type: 'complaint', ...match };
         }
       } catch {}
@@ -156,8 +166,8 @@ export default function TrackPage() {
         try {
           const stored = localStorage.getItem('cv_custom_certificates');
           if (stored) {
-            const locals = JSON.parse(stored);
-            const match = locals.find((c: any) => c.tracking_number?.toUpperCase() === cleanQuery);
+            const locals = JSON.parse(stored) as CertificateRequest[];
+            const match = locals.find((c) => c.tracking_number?.toUpperCase() === cleanQuery);
             if (match) foundRecord = { type: 'certificate', ...match };
           }
         } catch {}
@@ -225,7 +235,8 @@ export default function TrackPage() {
   };
 
   useEffect(() => {
-    if (!result?.tracking_number) {
+    const trackingNumber = result?.tracking_number;
+    if (!trackingNumber) {
       setMessages([]);
       return;
     }
@@ -233,17 +244,17 @@ export default function TrackPage() {
       let combined: ConversationMessage[] = [];
       try {
         const all: ConversationMessage[] = JSON.parse(localStorage.getItem('cv_record_messages') || '[]');
-        combined = all.filter((item) => item.tracking_number === result.tracking_number);
+        combined = all.filter((item) => item.tracking_number === trackingNumber);
       } catch {}
 
       if (isSupabaseConfigured && supabase) {
         const { data, error } = await supabase
           .from('record_messages')
           .select('*')
-          .eq('tracking_number', result.tracking_number)
+          .eq('tracking_number', trackingNumber)
           .order('created_at', { ascending: true });
         if (!error && data) {
-          const remote = data.map((item: any) => ({
+          const remote = data.map((item) => ({
             id: item.id,
             record_type: item.record_type,
             tracking_number: item.tracking_number,
@@ -295,10 +306,11 @@ export default function TrackPage() {
             .eq('tracking_number', message.tracking_number)
             .maybeSingle();
           if (complaint && !complaint.first_official_response_at) {
-            await supabase
+            const { error: responseError } = await supabase
               .from('complaints')
               .update({ first_official_response_at: message.created_at })
               .eq('tracking_number', message.tracking_number);
+            if (responseError) throw responseError;
           }
         }
       } catch {
@@ -405,7 +417,7 @@ export default function TrackPage() {
               <span className="text-xs font-mono font-bold text-blue-600 uppercase tracking-wider block">
                 {result.tracking_number}
               </span>
-              <h2 className="text-xl font-bold text-slate-900 mt-0.5">{result.title || result.purpose}</h2>
+              <h2 className="text-xl font-bold text-slate-900 mt-0.5">{'title' in result ? result.title : result.purpose}</h2>
               <p className="text-xs text-slate-500 mt-0.5">
                 Submitted by: <strong>{result.resident_name || 'You'}</strong>
               </p>
@@ -452,15 +464,19 @@ export default function TrackPage() {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
             <div className="p-3.5 bg-slate-50 rounded-xl space-y-1 border border-slate-100">
               <span className="text-slate-400 font-medium">Assigned Barangay Official</span>
-              <p className="font-semibold text-slate-800">{result.assigned_to || result.approved_by || 'Under Automated Routing'}</p>
+              <p className="font-semibold text-slate-800">
+                {result.type === 'complaint'
+                  ? (result.assigned_role_label || result.assigned_to || 'Under Automated Routing')
+                  : (result.approved_by_name || result.approved_by || 'Barangay Administration')}
+              </p>
             </div>
             <div className="p-3.5 bg-slate-50 rounded-xl space-y-1 border border-slate-100">
               <span className="text-slate-400 font-medium">Location Landmark</span>
-              <p className="font-semibold text-slate-800">{result.location_address || 'Barangay Hall, Hibao-an Sur'}</p>
+              <p className="font-semibold text-slate-800">{'location_address' in result ? result.location_address : 'Barangay Hall, Hibao-an Sur'}</p>
             </div>
           </div>
 
-          {result.ai_justification && (
+          {result.type === 'complaint' && result.ai_justification && (
             <div className="p-3 bg-blue-50/70 border border-blue-200 rounded-xl text-xs text-blue-900 space-y-1">
               <span className="font-bold flex items-center gap-1 text-[11px] uppercase tracking-wider text-blue-700">
                 AI Assessment & Routing Note

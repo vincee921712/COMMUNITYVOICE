@@ -4,38 +4,40 @@ import React, { useState } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
-import { ShieldCheck, LogIn, Mail, Lock, UserCircle, CheckCircle2, ArrowRight } from 'lucide-react';
+import { Mail, Lock, ArrowRight } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
-import { UserRole } from '@/lib/types';
+import { isSupabaseConfigured } from '@/lib/supabase/client';
 
 export default function LoginPage() {
   const router = useRouter();
   const { login } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [role, setRole] = useState<UserRole>('resident');
   const [isLoading, setIsLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
+    setErrorMessage('');
     try {
-      const authenticatedUser = await login(email, password, role);
+      const authenticatedUser = await login(email, password);
       const authenticatedRole = authenticatedUser.role;
       if (authenticatedRole === 'staff' || authenticatedRole === 'official' || authenticatedRole === 'admin') {
         router.replace('/admin/dashboard');
       } else {
         router.replace('/resident/dashboard');
       }
+    } catch (reason) {
+      setErrorMessage(reason instanceof Error ? reason.message : 'Could not sign in.');
     } finally {
       setIsLoading(false);
     }
   };
 
-  const setPreset = (presetEmail: string, presetRole: UserRole) => {
+  const setPreset = (presetEmail: string) => {
     setEmail(presetEmail);
-    setPassword('••••••••');
-    setRole(presetRole);
+    setPassword('local-demo');
   };
 
   return (
@@ -48,6 +50,7 @@ export default function LoginPage() {
               src="/logo.png"
               alt="CommunityVoice Logo"
               fill
+              sizes="64px"
               className="object-cover"
               priority
             />
@@ -58,7 +61,8 @@ export default function LoginPage() {
           </p>
         </div>
 
-        {/* Demo Fast-Login Presets */}
+        {/* Demo accounts are only available for local development without Supabase. */}
+        {process.env.NODE_ENV === 'development' && !isSupabaseConfigured && (
         <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3.5 space-y-2">
           <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 block">
             Demo Fast-Login (1-Click)
@@ -66,9 +70,9 @@ export default function LoginPage() {
           <div className="grid grid-cols-3 gap-1.5 text-[11px] font-semibold">
             <button
               type="button"
-              onClick={() => setPreset('resident@hibaoan.gov.ph', 'resident')}
+              onClick={() => setPreset('resident@hibaoan.gov.ph')}
               className={`p-2 rounded-xl border text-center transition-all ${
-                role === 'resident' && email === 'resident@hibaoan.gov.ph'
+                email === 'resident@hibaoan.gov.ph'
                   ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
                   : 'bg-white text-slate-700 border-slate-200 hover:border-slate-300'
               }`}
@@ -77,9 +81,9 @@ export default function LoginPage() {
             </button>
             <button
               type="button"
-              onClick={() => setPreset('secretary@hibaoan.gov.ph', 'staff')}
+              onClick={() => setPreset('secretary@hibaoan.gov.ph')}
               className={`p-2 rounded-xl border text-center transition-all ${
-                role === 'staff' && (email === 'secretary@hibaoan.gov.ph' || email === 'staff@hibaoan.gov.ph')
+                email === 'secretary@hibaoan.gov.ph'
                   ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
                   : 'bg-white text-slate-700 border-slate-200 hover:border-slate-300'
               }`}
@@ -88,9 +92,9 @@ export default function LoginPage() {
             </button>
             <button
               type="button"
-              onClick={() => setPreset('captain@hibaoan.gov.ph', 'official')}
+              onClick={() => setPreset('captain@hibaoan.gov.ph')}
               className={`p-2 rounded-xl border text-center transition-all ${
-                role === 'official' && email === 'captain@hibaoan.gov.ph'
+                email === 'captain@hibaoan.gov.ph'
                   ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
                   : 'bg-white text-slate-700 border-slate-200 hover:border-slate-300'
               }`}
@@ -99,22 +103,10 @@ export default function LoginPage() {
             </button>
           </div>
         </div>
+        )}
 
         {/* Login Form */}
         <form onSubmit={handleSubmit} className="space-y-4 text-xs">
-          <div>
-            <label className="block font-semibold text-slate-700 mb-1">Account Role</label>
-            <select
-              value={role}
-              onChange={(e) => setRole(e.target.value as UserRole)}
-              className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-xs"
-            >
-              <option value="resident">Resident / Citizen</option>
-              <option value="staff">Barangay Staff (Secretary / Clerk)</option>
-              <option value="official">Barangay Official (Captain / Kagawad)</option>
-            </select>
-          </div>
-
           <div>
             <label className="block font-semibold text-slate-700 mb-1">Email Address</label>
             <div className="relative">
@@ -154,6 +146,11 @@ export default function LoginPage() {
             <ArrowRight className="w-4 h-4" />
           </button>
         </form>
+        {errorMessage && (
+          <p role="alert" className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs text-rose-700">
+            {errorMessage}
+          </p>
+        )}
 
         {/* Footer info */}
         <div className="text-center pt-2 border-t border-slate-100 text-xs text-slate-500 space-y-1">

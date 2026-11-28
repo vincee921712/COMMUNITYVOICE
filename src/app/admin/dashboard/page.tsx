@@ -56,12 +56,15 @@ export default function AdminDashboardPage() {
   const router = useRouter();
   const { user, loading: authLoading } = useAuth();
   const [activeTab, setActiveTab] = useState<'overview' | 'complaints' | 'blotter' | 'certificates' | 'projects' | 'tanod' | 'analytics' | 'swdo' | 'users'>('overview');
-  const [complaints, setComplaints] = useState<Complaint[]>(INITIAL_COMPLAINTS);
-  const [certificates, setCertificates] = useState<CertificateRequest[]>(INITIAL_CERTIFICATES);
-  const [blotterRecords, setBlotterRecords] = useState<BlotterRecord[]>(INITIAL_BLOTTER);
-  const [projects, setProjects] = useState<BarangayProject[]>(INITIAL_PROJECTS);
-  const [tanodSchedules, setTanodSchedules] = useState<TanodSchedule[]>(INITIAL_TANOD_SCHEDULE);
+  const isLocalDemo = !isSupabaseConfigured && process.env.NODE_ENV === 'development';
+  const [complaints, setComplaints] = useState<Complaint[]>(isLocalDemo ? INITIAL_COMPLAINTS : []);
+  const [certificates, setCertificates] = useState<CertificateRequest[]>(isLocalDemo ? INITIAL_CERTIFICATES : []);
+  const [blotterRecords, setBlotterRecords] = useState<BlotterRecord[]>(isLocalDemo ? INITIAL_BLOTTER : []);
+  const [projects, setProjects] = useState<BarangayProject[]>(isLocalDemo ? INITIAL_PROJECTS : []);
+  const [tanodSchedules, setTanodSchedules] = useState<TanodSchedule[]>(isLocalDemo ? INITIAL_TANOD_SCHEDULE : []);
   const [successBanner, setSuccessBanner] = useState<string | null>(null);
+  const [errorBanner, setErrorBanner] = useState<string | null>(null);
+  const [complaintLoadError, setComplaintLoadError] = useState('');
 
   useEffect(() => {
     const syncTab = (tab: string | null) => {
@@ -181,21 +184,17 @@ export default function AdminDashboardPage() {
   // Load complaints from localStorage and Supabase
   useEffect(() => {
     async function fetchComplaints() {
-      let combined: Complaint[] = [...INITIAL_COMPLAINTS];
+      let combined: Complaint[] = isLocalDemo ? [...INITIAL_COMPLAINTS] : [];
 
-      // 1. Read from localStorage custom complaints
-      try {
-        const stored = localStorage.getItem('cv_custom_complaints');
-        if (stored) {
-          const locals: Complaint[] = JSON.parse(stored);
-          // Prepend local complaints
-          combined = [...locals, ...combined];
+      if (isLocalDemo) {
+        try {
+          const stored = localStorage.getItem('cv_custom_complaints');
+          if (stored) combined = [...JSON.parse(stored), ...combined];
+        } catch (e) {
+          console.warn('Could not read local complaints', e);
         }
-      } catch (e) {
-        console.warn('Could not read local complaints', e);
       }
 
-      // 2. Read from Supabase if connected
       if (isSupabaseConfigured && supabase) {
         try {
           const { data, error } = await supabase
@@ -203,8 +202,13 @@ export default function AdminDashboardPage() {
             .select('*')
             .order('created_at', { ascending: false });
 
+          if (error) {
+            setComplaintLoadError('Complaint metrics are unavailable because live records could not be loaded.');
+            console.error('Could not fetch complaints from Supabase:', error);
+          } else {
+            setComplaintLoadError('');
+          }
           if (!error && data && data.length > 0) {
-            // Deduplicate by tracking_number
             const existingTracking = new Set(data.map(d => d.tracking_number));
             const filteredCombined = combined.filter(c => !existingTracking.has(c.tracking_number));
             combined = [...(data as Complaint[]), ...filteredCombined];
@@ -223,31 +227,35 @@ export default function AdminDashboardPage() {
   // Load certificates from localStorage and Supabase
   useEffect(() => {
     async function fetchCertificates() {
-      let combined: CertificateRequest[] = [...INITIAL_CERTIFICATES];
+      let combined: CertificateRequest[] = isLocalDemo ? [...INITIAL_CERTIFICATES] : [];
 
-      // 1. Read from localStorage
-      try {
-        const stored = localStorage.getItem('cv_custom_certificates');
-        if (stored) {
-          const locals: CertificateRequest[] = JSON.parse(stored);
-          combined = [...locals, ...combined];
+      if (isLocalDemo) {
+        try {
+          const stored = localStorage.getItem('cv_custom_certificates');
+          if (stored) combined = [...JSON.parse(stored), ...combined];
+        } catch (err) {
+          console.warn('Could not read local certificates:', err);
         }
-      } catch (err) {
-        console.warn('Could not read local certificates:', err);
       }
 
-      // 2. Read from Supabase if connected
       if (isSupabaseConfigured && supabase) {
         try {
           const { data, error } = await supabase
             .from('certification_requests')
-            .select('*')
+            .select('*, profiles!certification_requests_resident_id_fkey(full_name)')
             .order('created_at', { ascending: false });
 
           if (!error && data && data.length > 0) {
             const existingTracking = new Set(data.map(d => d.tracking_number));
             const filteredCombined = combined.filter(c => !existingTracking.has(c.tracking_number));
-            combined = [...(data as CertificateRequest[]), ...filteredCombined];
+            const records = data as Array<CertificateRequest & { profiles?: { full_name: string } | null }>;
+            combined = [
+              ...records.map(({ profiles, ...request }) => ({
+                ...request,
+                resident_name: profiles?.full_name || '',
+              })),
+              ...filteredCombined,
+            ];
           }
         } catch (err) {
           console.warn('Could not fetch certificates from Supabase:', err);
@@ -263,16 +271,15 @@ export default function AdminDashboardPage() {
   // Load blotter records from localStorage and Supabase
   useEffect(() => {
     async function fetchBlotter() {
-      let combined: BlotterRecord[] = [...INITIAL_BLOTTER];
+      let combined: BlotterRecord[] = isLocalDemo ? [...INITIAL_BLOTTER] : [];
 
-      try {
-        const stored = localStorage.getItem('cv_custom_blotter');
-        if (stored) {
-          const locals: BlotterRecord[] = JSON.parse(stored);
-          combined = [...locals, ...combined];
+      if (isLocalDemo) {
+        try {
+          const stored = localStorage.getItem('cv_custom_blotter');
+          if (stored) combined = [...JSON.parse(stored), ...combined];
+        } catch (err) {
+          console.warn('Could not read local blotter:', err);
         }
-      } catch (err) {
-        console.warn('Could not read local blotter:', err);
       }
 
       if (isSupabaseConfigured && supabase) {
@@ -301,16 +308,15 @@ export default function AdminDashboardPage() {
   // Load projects from localStorage and Supabase
   useEffect(() => {
     async function fetchProjects() {
-      let combined: BarangayProject[] = [...INITIAL_PROJECTS];
+      let combined: BarangayProject[] = isLocalDemo ? [...INITIAL_PROJECTS] : [];
 
-      try {
-        const stored = localStorage.getItem('cv_custom_projects');
-        if (stored) {
-          const locals: BarangayProject[] = JSON.parse(stored);
-          combined = [...locals, ...combined];
+      if (isLocalDemo) {
+        try {
+          const stored = localStorage.getItem('cv_custom_projects');
+          if (stored) combined = [...JSON.parse(stored), ...combined];
+        } catch (err) {
+          console.warn('Could not read local projects:', err);
         }
-      } catch (err) {
-        console.warn('Could not read local projects:', err);
       }
 
       if (isSupabaseConfigured && supabase) {
@@ -339,16 +345,15 @@ export default function AdminDashboardPage() {
   // Load Tanod Schedules from localStorage and Supabase
   useEffect(() => {
     async function fetchTanodSchedules() {
-      let combined: TanodSchedule[] = [...INITIAL_TANOD_SCHEDULE];
+      let combined: TanodSchedule[] = isLocalDemo ? [...INITIAL_TANOD_SCHEDULE] : [];
 
-      try {
-        const stored = localStorage.getItem('cv_custom_tanod');
-        if (stored) {
-          const locals: TanodSchedule[] = JSON.parse(stored);
-          combined = [...locals, ...combined];
+      if (isLocalDemo) {
+        try {
+          const stored = localStorage.getItem('cv_custom_tanod');
+          if (stored) combined = [...JSON.parse(stored), ...combined];
+        } catch (err) {
+          console.warn('Could not read local tanod schedules:', err);
         }
-      } catch (err) {
-        console.warn('Could not read local tanod schedules:', err);
       }
 
       if (isSupabaseConfigured && supabase) {
@@ -404,31 +409,26 @@ export default function AdminDashboardPage() {
         }
       ];
 
-      let combined: UserProfile[] = [...defaultUsers];
+      let combined: UserProfile[] = isLocalDemo ? [...defaultUsers] : [];
 
-      // Read registered residents in localStorage
-      try {
-        const stored = localStorage.getItem('cv_registered_users');
-        if (stored) {
-          const dict: Record<string, UserProfile> = JSON.parse(stored);
-          const locals = Object.values(dict);
-          const existingEmails = new Set(combined.map(u => u.email.toLowerCase()));
-          const filtered = locals.filter(u => !existingEmails.has(u.email.toLowerCase()));
-          combined = [...combined, ...filtered];
+      if (isLocalDemo) {
+        try {
+          const stored = localStorage.getItem('cv_registered_users');
+          if (stored) {
+            const dict: Record<string, UserProfile> = JSON.parse(stored);
+            combined = [...combined, ...Object.values(dict)];
+          }
+        } catch (err) {
+          console.warn('Could not read registered users from localStorage:', err);
         }
-      } catch (err) {
-        console.warn('Could not read registered users from localStorage:', err);
       }
 
       // Read profiles from Supabase if configured
       if (isSupabaseConfigured && supabase) {
         try {
-          const { data } = await supabase.from('profiles').select('*');
-          if (data && data.length > 0) {
-            const existingEmails = new Set(combined.map(u => u.email.toLowerCase()));
-            const filtered = (data as UserProfile[]).filter(u => !existingEmails.has((u.email || '').toLowerCase()));
-            combined = [...combined, ...filtered];
-          }
+          const { data, error } = await supabase.from('profiles').select('*');
+          if (error) throw error;
+          combined = (data || []) as UserProfile[];
         } catch (err) {
           console.warn('Could not fetch profiles from Supabase:', err);
         }
@@ -442,6 +442,10 @@ export default function AdminDashboardPage() {
 
   // Handle Role Change
   const handleChangeRole = (userId: string, newRole: UserRole) => {
+    if (!isLocalDemo) {
+      setErrorBanner('Role changes must be performed through the secured account administration process.');
+      return;
+    }
     const updated = userAccounts.map(u => {
       if (u.id === userId) {
         return { ...u, role: newRole };
@@ -471,6 +475,10 @@ export default function AdminDashboardPage() {
   // Handle Add New User Account
   const handleCreateUser = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!isLocalDemo) {
+      setErrorBanner('Create resident accounts through the secure registration page. Staff roles must be provisioned by an administrator.');
+      return;
+    }
     const newUser: UserProfile = {
       id: `usr-${Date.now()}`,
       email: newUserEmail.trim().toLowerCase(),
@@ -739,7 +747,8 @@ export default function AdminDashboardPage() {
           ...c,
           is_staff_confirmed: true,
           status: 'Assigned' as const,
-          assigned_to: assignedRole,
+          assigned_to: user?.id,
+          assigned_role_label: assignedRole,
           assigned_at: new Date().toISOString(),
           status_history: [
             ...(c.status_history || []),
@@ -759,15 +768,20 @@ export default function AdminDashboardPage() {
 
     // Sync to Supabase
     if (isSupabaseConfigured && supabase && matched?.tracking_number) {
-      await supabase
+      const { error } = await supabase
         .from('complaints')
         .update({
           status: 'Assigned',
           is_staff_confirmed: true,
-          assigned_to: assignedRole,
+          assigned_to: user?.id || null,
+          assigned_role_label: assignedRole,
           assigned_at: new Date().toISOString()
         })
         .eq('tracking_number', matched.tracking_number);
+      if (error) {
+        setErrorBanner(`The assignment was applied locally but not saved: ${error.message}`);
+        return;
+      }
     }
 
     // Dispatch SMS notification via Semaphore Gateway
@@ -813,7 +827,7 @@ export default function AdminDashboardPage() {
     } catch {}
 
     if (isSupabaseConfigured && supabase && matched?.tracking_number) {
-      await supabase
+      const { error } = await supabase
         .from('complaints')
         .update({
           priority: newPriority,
@@ -821,6 +835,10 @@ export default function AdminDashboardPage() {
           is_staff_confirmed: true
         })
         .eq('tracking_number', matched.tracking_number);
+      if (error) {
+        setErrorBanner(`The priority change was applied locally but not saved: ${error.message}`);
+        return;
+      }
     }
 
     // Dispatch SMS notification for override update
@@ -847,7 +865,8 @@ export default function AdminDashboardPage() {
         return {
           ...cert,
           status: 'Ready for Pickup' as const,
-          approved_by: 'Hon. Punong Barangay (Barangay Captain)',
+          approved_by: user?.id,
+          approved_by_name: 'Hon. Punong Barangay (Barangay Captain)',
           approved_at: new Date().toISOString(),
           remarks: 'Approved. Available at Window 1.',
           status_history: [
@@ -868,15 +887,21 @@ export default function AdminDashboardPage() {
 
     // Sync to Supabase
     if (isSupabaseConfigured && supabase && matched?.tracking_number) {
-      await supabase
+      const { error } = await supabase
         .from('certification_requests')
         .update({
           status: 'Ready for Pickup',
+          approved_by: user?.id || null,
+          approved_by_name: 'Hon. Punong Barangay (Barangay Captain)',
           approved_at: new Date().toISOString(),
           remarks: 'Approved. Available at Window 1.',
           status_history: updated.find(cert => cert.id === id)?.status_history
         })
         .eq('tracking_number', matched.tracking_number);
+      if (error) {
+        setErrorBanner(`The approval was applied locally but not saved: ${error.message}`);
+        return;
+      }
     }
 
     // Dispatch SMS notification via Semaphore Gateway
@@ -930,6 +955,13 @@ export default function AdminDashboardPage() {
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
+      {isLocalDemo && (
+        <p role="note" className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+          Demo mode: sample records and metrics below are examples only and are not live barangay data.
+        </p>
+      )}
+      {complaintLoadError && <p role="alert" className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs text-rose-700">{complaintLoadError}</p>}
+      {errorBanner && <p role="alert" className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs text-rose-700">{errorBanner}</p>}
       {/* Dashboard Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-6 border-b border-slate-200 gap-4">
         <div>
@@ -1128,7 +1160,9 @@ export default function AdminDashboardPage() {
                       <Sparkles className="w-3.5 h-3.5 text-blue-600" />
                       <span>AI Model Assessment (FastAPI Engine)</span>
                     </div>
-                    <span className="text-[10px] text-blue-600 font-mono">Confidence: {((c.ai_confidence || 0.9) * 100).toFixed(0)}%</span>
+                    {typeof c.ai_confidence === 'number' && (
+                      <span className="text-[10px] text-blue-600 font-mono">Confidence: {(c.ai_confidence * 100).toFixed(0)}%</span>
+                    )}
                   </div>
                   <p className="text-slate-700"><strong>Justification:</strong> {c.ai_justification}</p>
                   <p className="text-slate-700"><strong>Recommended Routing:</strong> {c.assigned_to || 'Assigned Kagawad'}</p>
@@ -1561,7 +1595,7 @@ export default function AdminDashboardPage() {
                   <label className="block font-semibold text-slate-700 mb-1">Project Status *</label>
                   <select
                     value={projectStatus}
-                    onChange={(e) => setProjectStatus(e.target.value as any)}
+                    onChange={(e) => setProjectStatus(e.target.value as 'Proposed' | 'Ongoing' | 'Completed' | 'On Hold')}
                     className="w-full text-xs rounded-xl border border-slate-300 px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                   >
                     <option value="Proposed">Proposed (Under Council Review)</option>
@@ -1760,7 +1794,7 @@ export default function AdminDashboardPage() {
                   <label className="block font-semibold text-slate-700 mb-1">Patrol Shift Period *</label>
                   <select
                     value={dutyShift}
-                    onChange={(e) => setDutyShift(e.target.value as any)}
+                    onChange={(e) => setDutyShift(e.target.value as 'Night Patrol (10PM - 6AM)' | 'Afternoon Shift (2PM - 10PM)' | 'Day Shift (6AM - 2PM)')}
                     className="w-full text-xs rounded-xl border border-slate-300 px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                   >
                     <option value="Night Patrol (10PM - 6AM)">Night Patrol (10PM - 6AM) • Curfew & Security</option>

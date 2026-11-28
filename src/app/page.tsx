@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import Link from 'next/link';
 import { 
   PlusCircle, 
@@ -11,8 +11,7 @@ import {
   Sparkles, 
   TrendingUp, 
   Clock, 
-  ArrowRight,
-  CheckCircle2
+  ArrowRight
 } from 'lucide-react';
 import dynamic from 'next/dynamic';
 import { INITIAL_COMPLAINTS, INITIAL_PROJECTS } from '@/lib/mockData';
@@ -32,14 +31,17 @@ const LeafletMap = dynamic(() => import('@/components/Map/LeafletMap'), {
 
 export default function HomePage() {
   const { user } = useAuth();
-  const [complaints, setComplaints] = useState<Complaint[]>(INITIAL_COMPLAINTS);
-  const [projects, setProjects] = useState<BarangayProject[]>(INITIAL_PROJECTS);
+  const [complaints, setComplaints] = useState<Complaint[]>([]);
+  const [projects, setProjects] = useState<BarangayProject[]>([]);
+  const [shouldLoadMap, setShouldLoadMap] = useState(false);
+  const mapSectionRef = useRef<HTMLDivElement>(null);
 
   const isStaffOrOfficial = Boolean(
     user && (user.role === 'staff' || user.role === 'official' || user.role === 'admin')
   );
 
   const visibleComplaints = useMemo(() => {
+    if (isSupabaseConfigured) return complaints;
     if (isStaffOrOfficial) {
       return complaints;
     }
@@ -64,37 +66,64 @@ export default function HomePage() {
   }, [complaints, isStaffOrOfficial, user]);
 
   useEffect(() => {
-    // Load complaints
-    let combinedComplaints = [...INITIAL_COMPLAINTS];
-    try {
-      const storedC = localStorage.getItem('cv_custom_complaints');
-      if (storedC) combinedComplaints = [...JSON.parse(storedC), ...combinedComplaints];
-    } catch {}
-    setComplaints(combinedComplaints);
-
-    // Load projects
-    async function loadProjects() {
-      let combinedProjects = [...INITIAL_PROJECTS];
-      try {
-        const storedP = localStorage.getItem('cv_custom_projects');
-        if (storedP) combinedProjects = [...JSON.parse(storedP), ...combinedProjects];
-      } catch {}
-
+    let active = true;
+    async function loadHomeData() {
       if (isSupabaseConfigured && supabase) {
-        try {
-          const { data } = await supabase.from('barangay_projects').select('*');
-          if (data && data.length > 0) {
-            const existing = new Set(data.map(d => d.title));
-            const filtered = combinedProjects.filter(p => !existing.has(p.title));
-            combinedProjects = [...(data as BarangayProject[]), ...filtered];
-          }
-        } catch {}
+        const [complaintResult, projectResult] = await Promise.all([
+          user ? supabase.from('complaints').select('*').order('created_at', { ascending: false }) : Promise.resolve(null),
+          supabase.from('barangay_projects').select('*'),
+        ]);
+        if (!active) return;
+        if (!complaintResult) {
+          setComplaints([]);
+        } else if (complaintResult.error) {
+          console.error('Could not load community complaints:', complaintResult.error);
+          setComplaints([]);
+        } else {
+          setComplaints((complaintResult.data || []) as Complaint[]);
+        }
+        if (projectResult.error) {
+          console.error('Could not load community projects:', projectResult.error);
+          setProjects([]);
+        } else {
+          setProjects((projectResult.data || []) as BarangayProject[]);
+        }
+        return;
       }
 
-      setProjects(combinedProjects);
+      if (process.env.NODE_ENV !== 'development') return;
+      try {
+        const storedComplaints = localStorage.getItem('cv_custom_complaints');
+        setComplaints([...(storedComplaints ? JSON.parse(storedComplaints) : []), ...INITIAL_COMPLAINTS]);
+        const storedProjects = localStorage.getItem('cv_custom_projects');
+        setProjects([...(storedProjects ? JSON.parse(storedProjects) : []), ...INITIAL_PROJECTS]);
+      } catch (error) {
+        console.warn('Could not load local demo homepage data:', error);
+        setComplaints(INITIAL_COMPLAINTS);
+        setProjects(INITIAL_PROJECTS);
+      }
     }
 
-    loadProjects();
+    void loadHomeData();
+    return () => { active = false; };
+  }, [user]);
+
+  useEffect(() => {
+    const mapSection = mapSectionRef.current;
+    if (!mapSection) return;
+    if (!('IntersectionObserver' in window)) {
+      setShouldLoadMap(true);
+      return;
+    }
+
+    const observer = new IntersectionObserver(([entry]) => {
+      if (entry.isIntersecting) {
+        setShouldLoadMap(true);
+        observer.disconnect();
+      }
+    }, { rootMargin: '250px' });
+    observer.observe(mapSection);
+    return () => observer.disconnect();
   }, []);
   return (
     <div className="space-y-12 pb-12">
@@ -140,28 +169,26 @@ export default function HomePage() {
             
             <div className="grid grid-cols-2 gap-3 text-slate-100">
               <div className="bg-slate-900/60 p-3 rounded-xl border border-white/10">
-                <span className="text-2xl font-bold text-emerald-400">100%</span>
-                <p className="text-xs text-slate-300 mt-0.5">Digital Transparency</p>
+                <span className="text-lg font-bold text-emerald-400">Online</span>
+                <p className="text-xs text-slate-300 mt-0.5">Complaint reporting</p>
               </div>
               <div className="bg-slate-900/60 p-3 rounded-xl border border-white/10">
-                <span className="text-2xl font-bold text-amber-400">&lt; 24h</span>
-                <p className="text-xs text-slate-300 mt-0.5">High-Priority Routing</p>
+                <span className="text-lg font-bold text-amber-400">Trackable</span>
+                <p className="text-xs text-slate-300 mt-0.5">Request status updates</p>
               </div>
               <div className="bg-slate-900/60 p-3 rounded-xl border border-white/10">
-                <span className="text-2xl font-bold text-blue-300">FastAPI</span>
-                <p className="text-xs text-slate-300 mt-0.5">AI Classification</p>
+                <span className="text-lg font-bold text-blue-300">Digital</span>
+                <p className="text-xs text-slate-300 mt-0.5">Document requests</p>
               </div>
               <div className="bg-slate-900/60 p-3 rounded-xl border border-white/10">
-                <span className="text-2xl font-bold text-purple-300">SWDO</span>
-                <p className="text-xs text-slate-300 mt-0.5">Minor Protection Flag</p>
+                <span className="text-lg font-bold text-purple-300">Reviewed</span>
+                <p className="text-xs text-slate-300 mt-0.5">Barangay staff follow-up</p>
               </div>
             </div>
 
             <div className="pt-2 text-xs text-slate-300 border-t border-white/10 flex items-center justify-between">
               <span>Privacy protected under RA 10173</span>
-              <span className="text-emerald-300 font-medium flex items-center gap-1">
-                <CheckCircle2 className="w-3.5 h-3.5" /> Staff Verified
-              </span>
+              <span className="text-emerald-300 font-medium">Community services</span>
             </div>
           </div>
         </div>
@@ -254,13 +281,19 @@ export default function HomePage() {
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-center">
-            <div className="lg:col-span-8 h-[380px]">
-              <LeafletMap 
-                center={[10.7314, 122.5228]} 
-                zoom={15} 
-                complaints={visibleComplaints} 
-                projects={projects} 
-              />
+            <div ref={mapSectionRef} className="lg:col-span-8 h-[380px]">
+              {shouldLoadMap ? (
+                <LeafletMap
+                  center={[10.7314, 122.5228]}
+                  zoom={15}
+                  complaints={visibleComplaints}
+                  projects={projects}
+                />
+              ) : (
+                <div className="w-full h-full rounded-2xl bg-slate-100 flex items-center justify-center text-slate-400 text-sm">
+                  Interactive map loads when you reach this section.
+                </div>
+              )}
             </div>
 
             {/* Projects List Preview */}

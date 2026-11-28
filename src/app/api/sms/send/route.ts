@@ -1,4 +1,5 @@
-import { NextResponse } from 'next/server';
+import { createServerClient } from '@supabase/ssr';
+import { NextRequest, NextResponse } from 'next/server';
 
 interface SmsRequestBody {
   to: string;
@@ -6,6 +7,19 @@ interface SmsRequestBody {
   trigger?: string;
   recipientName?: string;
   refNumber?: string;
+}
+
+const dispatchCounts = new Map<string, { count: number; resetAt: number }>();
+
+function isRateLimited(key: string): boolean {
+  const now = Date.now();
+  const window = dispatchCounts.get(key);
+  if (!window || window.resetAt <= now) {
+    dispatchCounts.set(key, { count: 1, resetAt: now + 60_000 });
+    return false;
+  }
+  window.count += 1;
+  return window.count > 20;
 }
 
 /**
@@ -33,8 +47,37 @@ function normalizePhilippineNumber(phone: string): string {
   return cleaned;
 }
 
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
   try {
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    if (!supabaseUrl || !supabaseAnonKey) {
+      return NextResponse.json({ error: 'Authentication is unavailable.' }, { status: 503 });
+    }
+
+    const supabase = createServerClient(supabaseUrl, supabaseAnonKey, {
+      cookies: {
+        getAll: () => request.cookies.getAll(),
+        setAll: () => undefined,
+      },
+    });
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    if (authError || !user) {
+      return NextResponse.json({ error: 'Authentication required.' }, { status: 401 });
+    }
+    if (isRateLimited(user.id)) {
+      return NextResponse.json({ error: 'Too many SMS dispatch requests.' }, { status: 429 });
+    }
+
+    const { data: profile, error: profileError } = await supabase
+      .from('profiles')
+      .select('role, phone_number')
+      .eq('id', user.id)
+      .maybeSingle();
+    if (profileError || !profile) {
+      return NextResponse.json({ error: 'Could not verify account permissions.' }, { status: 403 });
+    }
+
     const body = (await request.json()) as SmsRequestBody;
     const { to, message, trigger, recipientName, refNumber } = body;
 
@@ -47,6 +90,21 @@ export async function POST(request: Request) {
 
     const normalizedNumber = normalizePhilippineNumber(to);
     const isValidFormat = /^09\d{9}$/.test(normalizedNumber);
+    if (!isValidFormat) {
+      return NextResponse.json({ error: 'A valid Philippine mobile number is required.' }, { status: 400 });
+    }
+
+    const isStaff = ['staff', 'official', 'admin'].includes(profile.role);
+    const residentAcknowledgement = trigger === 'complaint_submitted' || trigger === 'certificate_submitted';
+    if (!isStaff && !residentAcknowledgement) {
+      return NextResponse.json({ error: 'You are not authorized to dispatch this SMS.' }, { status: 403 });
+    }
+    if (!isStaff) {
+      const profileNumber = normalizePhilippineNumber(profile.phone_number || '');
+      if (profileNumber !== normalizedNumber) {
+        return NextResponse.json({ error: 'SMS recipients must match your registered mobile number.' }, { status: 403 });
+      }
+    }
 
     const apiKey = process.env.SEMAPHORE_API_KEY;
     const smsMode = (process.env.NEXT_PUBLIC_SMS_MODE || 'test').toLowerCase();

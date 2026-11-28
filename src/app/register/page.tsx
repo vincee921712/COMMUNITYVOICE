@@ -17,13 +17,23 @@ export default function RegisterPage() {
   const [password, setPassword] = useState('');
   const [zone, setZone] = useState('Zone 1 (Near Iglesia ni Cristo Church / Main Road Area)');
   const [isLoading, setIsLoading] = useState(false);
+  const [formError, setFormError] = useState('');
+  const [formMessage, setFormMessage] = useState('');
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
+    setFormError('');
+    setFormMessage('');
     try {
-      await register(fullName, email, 'resident', phone, password);
-      router.push('/');
+      const signedIn = await register(fullName, email, phone, password, zone);
+      if (signedIn) {
+        router.replace('/resident/dashboard');
+      } else {
+        setFormMessage('Your account was created. Check your email to confirm it, then sign in.');
+      }
+    } catch (reason) {
+      setFormError(reason instanceof Error ? reason.message : 'Could not create your account.');
     } finally {
       setIsLoading(false);
     }
@@ -45,20 +55,22 @@ export default function RegisterPage() {
           </div>
           <h2 className="text-2xl font-extrabold text-slate-900 tracking-tight">Resident Registration</h2>
           <p className="text-xs text-slate-500">
-            Instant Sign-Up • Barangay Hibao-an Sur, Mandurriao, Iloilo City
+            Secure resident registration • Barangay Hibao-an Sur
           </p>
         </div>
 
         {/* Benefits reminder */}
         <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-2xl text-[11px] text-emerald-900 space-y-1">
           <span className="font-bold flex items-center gap-1 text-emerald-800">
-            <CheckCircle2 className="w-3.5 h-3.5" /> Instant Access Enabled
+            <CheckCircle2 className="w-3.5 h-3.5" /> Secure Account Access
           </span>
-          <p>Register once to file incident reports with photo attachments and track certificate requests in real time.</p>
+          <p>Confirm your account to file incident reports and track your requests securely.</p>
         </div>
 
         {/* Form */}
         <form onSubmit={handleSubmit} className="space-y-4 text-xs">
+          {formError && <p role="alert" className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs text-rose-700">{formError}</p>}
+          {formMessage && <p role="status" className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-800">{formMessage}</p>}
           <div>
             <label className="block font-semibold text-slate-700 mb-1">Full Legal Name *</label>
             <div className="relative">
@@ -96,6 +108,7 @@ export default function RegisterPage() {
               <input
                 type="tel"
                 required
+                pattern="09[0-9]{9}"
                 value={phone}
                 onChange={(e) => setPhone(e.target.value)}
                 placeholder="0917-123-4567"
@@ -139,6 +152,8 @@ export default function RegisterPage() {
               <input
                 type="password"
                 required
+                minLength={6}
+                maxLength={72}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="At least 6 characters"
@@ -152,7 +167,7 @@ export default function RegisterPage() {
             disabled={isLoading}
             className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl shadow-md shadow-emerald-500/20 transition-all text-xs flex items-center justify-center space-x-1.5 cursor-pointer disabled:opacity-50"
           >
-            <span>{isLoading ? 'Creating Account...' : 'Complete Instant Registration'}</span>
+            <span>{isLoading ? 'Creating Account...' : 'Create Resident Account'}</span>
             <ArrowRight className="w-4 h-4" />
           </button>
         </form>

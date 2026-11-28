@@ -10,7 +10,7 @@ import { notifyCertificateSubmitted } from '@/lib/smsService';
 
 export default function CertificatesPage() {
   const { user } = useAuth();
-  const [requests, setRequests] = useState<CertificateRequest[]>(INITIAL_CERTIFICATES);
+  const [requests, setRequests] = useState<CertificateRequest[]>(isSupabaseConfigured ? [] : INITIAL_CERTIFICATES);
   const [certType, setCertType] = useState<CertificateType>('certificate_of_indigency');
   const [name, setName] = useState(user?.full_name || '');
   const [purpose, setPurpose] = useState('');
@@ -18,6 +18,9 @@ export default function CertificatesPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submittedId, setSubmittedId] = useState<string | null>(null);
   const [myTrackings, setMyTrackings] = useState<string[]>([]);
+  const [loadError, setLoadError] = useState('');
+  const [submitError, setSubmitError] = useState('');
+  const [savedToDatabase, setSavedToDatabase] = useState(false);
 
   const isStaffOrOfficial = Boolean(
     user && (user.role === 'staff' || user.role === 'official' || user.role === 'admin')
@@ -35,45 +38,54 @@ export default function CertificatesPage() {
     }
   }, []);
 
-  // Load existing certificates from localStorage and Supabase
+  // Use database records in configured environments; local fixtures are development-only.
   useEffect(() => {
+    let active = true;
     async function loadCertificates() {
-      let combined: CertificateRequest[] = [...INITIAL_CERTIFICATES];
+      if (isSupabaseConfigured && supabase) {
+        if (!user) {
+          if (active) setRequests([]);
+          return;
+        }
+        let query = supabase
+          .from('certification_requests')
+          .select('*, profiles!certification_requests_resident_id_fkey(full_name)')
+          .order('created_at', { ascending: false });
+        if (!isStaffOrOfficial) query = query.eq('resident_id', user.id);
+        const { data, error } = await query;
+        if (error) {
+          console.error('Could not load certificate requests:', error);
+          if (active) setLoadError('Could not load document requests. Please refresh and try again.');
+          return;
+        }
+        if (active) {
+          setLoadError('');
+          const records = (data || []) as Array<CertificateRequest & { profiles?: { full_name: string } | null }>;
+          setRequests(records.map(({ profiles, ...request }) => ({
+            ...request,
+            resident_name: profiles?.full_name || user.full_name,
+          })));
+        }
+        return;
+      }
 
-      // 1. Read from localStorage
+      if (process.env.NODE_ENV !== 'development') {
+        if (active) setRequests([]);
+        return;
+      }
+      let combined: CertificateRequest[] = [...INITIAL_CERTIFICATES];
       try {
         const stored = localStorage.getItem('cv_custom_certificates');
-        if (stored) {
-          const locals: CertificateRequest[] = JSON.parse(stored);
-          combined = [...locals, ...combined];
-        }
-      } catch (err) {
-        console.warn('Could not read local certificates:', err);
+        if (stored) combined = [...JSON.parse(stored), ...combined];
+      } catch (error) {
+        console.warn('Could not read local certificates:', error);
       }
-
-      // 2. Read from Supabase if connected
-      if (isSupabaseConfigured && supabase) {
-        try {
-          const { data, error } = await supabase
-            .from('certification_requests')
-            .select('*')
-            .order('created_at', { ascending: false });
-
-          if (!error && data && data.length > 0) {
-            const existingTracking = new Set(data.map(d => d.tracking_number));
-            const filteredCombined = combined.filter(c => !existingTracking.has(c.tracking_number));
-            combined = [...(data as CertificateRequest[]), ...filteredCombined];
-          }
-        } catch (err) {
-          console.warn('Could not load certificates from Supabase:', err);
-        }
-      }
-
-      setRequests(combined);
+      if (active) setRequests(combined);
     }
 
-    loadCertificates();
-  }, []);
+    void loadCertificates();
+    return () => { active = false; };
+  }, [user, isStaffOrOfficial]);
 
   // Update applicant defaults when auth user changes
   useEffect(() => {
@@ -84,11 +96,15 @@ export default function CertificatesPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
+    setSubmitError('');
+    setSubmittedId(null);
+    setSavedToDatabase(false);
 
     const newId = `CERT-2026-${Math.floor(1000 + Math.random() * 9000)}`;
     const newReq: CertificateRequest = {
       id: `cert-${Date.now()}`,
       tracking_number: newId,
+      resident_id: user?.id,
       resident_name: name,
       certificate_type: certType,
       purpose,
@@ -97,57 +113,58 @@ export default function CertificatesPage() {
       created_at: new Date().toISOString()
     };
 
-    // 1. Save to local storage for instant availability
     try {
-      const stored = localStorage.getItem('cv_custom_certificates');
-      const list = stored ? JSON.parse(stored) : [];
-      list.unshift(newReq);
-      localStorage.setItem('cv_custom_certificates', JSON.stringify(list));
-
-      // Also record in personal tracking list for resident isolation
-      const storedTrackings = JSON.parse(localStorage.getItem('cv_my_tracking_numbers') || '[]');
-      if (!storedTrackings.includes(newId)) {
-        storedTrackings.unshift(newId);
-        localStorage.setItem('cv_my_tracking_numbers', JSON.stringify(storedTrackings));
-        setMyTrackings(storedTrackings);
-      }
-    } catch (err) {
-      console.warn('Local storage write error:', err);
-    }
-
-    // 2. Save to live Supabase database
-    if (isSupabaseConfigured && supabase) {
-      try {
-        const { error } = await supabase.from('certification_requests').insert({
+      let savedRequest = newReq;
+      if (isSupabaseConfigured && supabase) {
+        if (!user || user.role !== 'resident' || !/^[0-9a-f-]{36}$/i.test(user.id)) {
+          throw new Error('Sign in with a verified resident account before requesting a document.');
+        }
+        const { data, error } = await supabase.from('certification_requests').insert({
           tracking_number: newId,
-          resident_name: name,
+          resident_id: user.id,
           certificate_type: certType,
           purpose,
           contact_number: contact,
           status: 'Pending'
-        });
-
-        if (error) {
-          console.warn('Supabase certificate insert warning:', error.message);
+        }).select('*').single();
+        if (error) throw new Error(`Your request was not saved: ${error.message}`);
+        savedRequest = { ...data, resident_name: user.full_name } as CertificateRequest;
+        setSavedToDatabase(true);
+      } else {
+        if (process.env.NODE_ENV === 'production') {
+          throw new Error('Document requests are unavailable because the database is not configured.');
         }
-      } catch (err) {
-        console.error('Database connection error:', err);
+        try {
+          const stored = localStorage.getItem('cv_custom_certificates');
+          const list: CertificateRequest[] = stored ? JSON.parse(stored) : [];
+          list.unshift(newReq);
+          localStorage.setItem('cv_custom_certificates', JSON.stringify(list));
+          const storedTrackings: string[] = JSON.parse(localStorage.getItem('cv_my_tracking_numbers') || '[]');
+          if (!storedTrackings.includes(newId)) {
+            storedTrackings.unshift(newId);
+            localStorage.setItem('cv_my_tracking_numbers', JSON.stringify(storedTrackings));
+            setMyTrackings(storedTrackings);
+          }
+        } catch {
+          throw new Error('The local demo could not save this request in browser storage.');
+        }
       }
-    }
 
-    // 3. Dispatch automated SMS confirmation receipt via Semaphore Gateway
-    try {
       if (contact && contact.trim()) {
-        notifyCertificateSubmitted(contact, newId, getDocName(certType), name);
+        try {
+          notifyCertificateSubmitted(contact, newId, getDocName(certType), name);
+        } catch (smsError) {
+          console.warn('Certificate request was saved, but SMS notification failed:', smsError);
+        }
       }
-    } catch (smsErr) {
-      console.warn('SMS dispatch error:', smsErr);
+      setRequests((current) => [savedRequest, ...current]);
+      setSubmittedId(newId);
+      setPurpose('');
+    } catch (reason) {
+      setSubmitError(reason instanceof Error ? reason.message : 'Could not submit the document request.');
+    } finally {
+      setIsSubmitting(false);
     }
-
-    setRequests([newReq, ...requests]);
-    setSubmittedId(newId);
-    setPurpose('');
-    setIsSubmitting(false);
   };
 
   const getDocName = (type: CertificateType) => {
@@ -163,6 +180,7 @@ export default function CertificatesPage() {
     if (isStaffOrOfficial) {
       return requests;
     }
+    if (isSupabaseConfigured) return requests;
 
     const userName = user?.full_name?.toLowerCase().trim();
     const userPhone = user?.phone_number?.replace(/\D/g, '');
@@ -214,9 +232,12 @@ export default function CertificatesPage() {
                 <CheckCircle2 className="w-4 h-4 text-emerald-600" />
                 Request Submitted Successfully!
               </span>
-              <p>Reference: <strong className="font-mono">{submittedId}</strong>. You will receive an SMS update when approved by the Punong Barangay.</p>
+              <p>Reference: <strong className="font-mono">{submittedId}</strong>. {savedToDatabase ? 'Your request was saved and can be tracked here.' : 'This local demo request is saved only in this browser.'}</p>
             </div>
           )}
+
+          {loadError && <p role="alert" className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs text-rose-700">{loadError}</p>}
+          {submitError && <p role="alert" className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs text-rose-700">{submitError}</p>}
 
           <form onSubmit={handleSubmit} className="space-y-4 text-xs">
             <div>
@@ -270,9 +291,10 @@ export default function CertificatesPage() {
 
             <button
               type="submit"
-              className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl transition-all shadow-sm"
+              disabled={isSubmitting}
+              className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl transition-all shadow-sm disabled:opacity-50"
             >
-              Submit Request for Captain Approval
+              {isSubmitting ? 'Submitting...' : 'Submit Request for Captain Approval'}
             </button>
           </form>
         </div>

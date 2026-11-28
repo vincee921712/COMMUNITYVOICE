@@ -21,6 +21,7 @@ export interface Category {
 export interface Complaint {
   id: string;
   tracking_number: string;
+  resident_id?: string;
   resident_name: string;
   resident_contact?: string;
   title: string;
@@ -46,6 +47,7 @@ export interface Complaint {
   duplicate_similarity_score?: number;
   
   assigned_to?: string;
+  assigned_role_label?: string;
   assigned_at?: string;
   first_official_response_at?: string;
   resolved_at?: string;
@@ -91,12 +93,14 @@ export type CertificateStatus = 'Pending' | 'For Approval' | 'Ready for Pickup' 
 export interface CertificateRequest {
   id: string;
   tracking_number: string;
+  resident_id?: string;
   resident_name: string;
   certificate_type: CertificateType;
   purpose: string;
   contact_number: string;
   status: CertificateStatus;
   approved_by?: string;
+  approved_by_name?: string;
   approved_at?: string;
   released_at?: string;
   remarks?: string;

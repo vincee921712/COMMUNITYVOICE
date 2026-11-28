@@ -73,6 +73,8 @@ export default function ReportPage() {
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submittedTracking, setSubmittedTracking] = useState<string | null>(null);
+  const [submitError, setSubmitError] = useState('');
+  const [savedToDatabase, setSavedToDatabase] = useState(false);
 
   // Fetch live categories and existing active complaints on mount
   useEffect(() => {
@@ -208,15 +210,19 @@ export default function ReportPage() {
   const executeSubmission = async (isBypassedDuplicate: boolean) => {
     setIsSubmitting(true);
     setShowDuplicateModal(false);
+    setSubmitError('');
+    setSubmittedTracking(null);
+    setSavedToDatabase(false);
 
     const trackingCode = `CV-2026-${Math.floor(1000 + Math.random() * 9000)}`;
     const assignedCategory = categories.find(c => c.id === categoryId);
-    const matchedRef = duplicateAlert.matchedComplaint?.tracking_number;
+    const matchedRef = duplicateAlert.matchedComplaint?.id;
+    const submittedAt = new Date().toISOString();
 
-    // 1. Prepare complaint object
     const newComplaintRecord: Complaint = {
       id: `cmp-${Date.now()}`,
       tracking_number: trackingCode,
+      resident_id: user?.id,
       resident_name: name || 'Anonymous Resident',
       resident_contact: contact || undefined,
       title,
@@ -230,7 +236,6 @@ export default function ReportPage() {
       ai_category_id: aiResult?.category || categoryId,
       ai_priority: aiResult?.priority || 'Medium',
       ai_justification: aiResult?.justification || 'Self-submitted by resident',
-      ai_confidence: 0.92,
       is_staff_confirmed: false,
       is_minor_flagged: aiResult?.involves_minor || false,
       is_duplicate_flagged: isBypassedDuplicate,
@@ -238,36 +243,21 @@ export default function ReportPage() {
       duplicate_similarity_score: isBypassedDuplicate ? duplicateAlert.similarityScore / 100 : undefined,
       status_history: [{
         status: 'Submitted',
-        changed_at: new Date().toISOString(),
+        changed_at: submittedAt,
         changed_by: user?.full_name || name || 'Resident'
       }],
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString()
+      created_at: submittedAt,
+      updated_at: submittedAt
     };
 
-    // 2. Always persist locally in localStorage so Track, Map & Admin reflect immediately
     try {
-      const stored = localStorage.getItem('cv_custom_complaints');
-      const list = stored ? JSON.parse(stored) : [];
-      list.unshift(newComplaintRecord);
-      localStorage.setItem('cv_custom_complaints', JSON.stringify(list));
-
-      // Also record in personal tracking list for resident map view
-      const myTrackings = JSON.parse(localStorage.getItem('cv_my_tracking_numbers') || '[]');
-      if (!myTrackings.includes(trackingCode)) {
-        myTrackings.unshift(trackingCode);
-        localStorage.setItem('cv_my_tracking_numbers', JSON.stringify(myTrackings));
-      }
-    } catch (e) {
-      console.warn('Local storage write note:', e);
-    }
-
-    // 3. Save to Live Supabase if connected
-    if (isSupabaseConfigured && supabase) {
-      try {
+      if (isSupabaseConfigured && supabase) {
+        if (!user || !/^[0-9a-f-]{36}$/i.test(user.id)) {
+          throw new Error('Sign in with a verified resident account before submitting a complaint.');
+        }
         const { error } = await supabase.from('complaints').insert({
           tracking_number: trackingCode,
-          resident_id: user && /^[0-9a-f-]{36}$/i.test(user.id) ? user.id : null,
+          resident_id: user.id,
           title,
           description,
           location_address: 'Barangay Hibao-an Sur, Mandurriao, Iloilo City',
@@ -281,42 +271,59 @@ export default function ReportPage() {
           ai_justification: aiResult?.justification || 'Self-submitted by resident',
           is_minor_flagged: aiResult?.involves_minor || false,
           is_duplicate_flagged: isBypassedDuplicate,
-          duplicate_of_id: isBypassedDuplicate && matchedRef ? matchedRef : null,
+          duplicate_of_id: isBypassedDuplicate && matchedRef && /^[0-9a-f-]{36}$/i.test(matchedRef) ? matchedRef : null,
           status_history: newComplaintRecord.status_history,
           attachments: attachedImage ? [{ name: imageFileName, data: attachedImage }] : []
         });
 
-        if (error) {
-          console.warn('Supabase insert note:', error.message);
+        if (error) throw new Error(`Your complaint was not saved: ${error.message}`);
+        setSavedToDatabase(true);
+      } else {
+        if (process.env.NODE_ENV === 'production') {
+          throw new Error('Complaint submission is unavailable because the database is not configured.');
         }
-      } catch (err) {
-        console.error('Database connection error:', err);
+        setSavedToDatabase(false);
       }
-    }
 
-    // 4. Dispatch SMS Notifications via Semaphore Gateway
-    try {
-      // Receipt to resident if mobile number was provided
-      if (contact && contact.trim()) {
-        notifyComplaintSubmitted(contact, trackingCode, title, name);
-      }
-      // Automated high priority emergency alert to Captain & Tanod Dispatch
-      const finalPriority = aiResult?.priority || assignedCategory?.default_priority || 'Medium';
-      if (finalPriority === 'High' || aiResult?.involves_minor) {
-        notifyCaptainHighPriorityAlert(
-          '0917-555-0100',
-          trackingCode,
-          title,
-          'Barangay Hibao-an Sur',
-          'High'
-        );
-      }
-    } catch (smsErr) {
-      console.warn('SMS dispatch error:', smsErr);
-    }
+      try {
+        const stored = localStorage.getItem('cv_custom_complaints');
+        const list: Complaint[] = stored ? JSON.parse(stored) : [];
+        list.unshift(newComplaintRecord);
+        localStorage.setItem('cv_custom_complaints', JSON.stringify(list));
 
-    setSubmittedTracking(trackingCode);
-    setIsSubmitting(false);
+        const myTrackings: string[] = JSON.parse(localStorage.getItem('cv_my_tracking_numbers') || '[]');
+        if (!myTrackings.includes(trackingCode)) {
+          myTrackings.unshift(trackingCode);
+          localStorage.setItem('cv_my_tracking_numbers', JSON.stringify(myTrackings));
+        }
+      } catch (storageError) {
+        if (!isSupabaseConfigured) throw new Error('The local demo could not save this complaint in browser storage.');
+        console.warn('Complaint saved to Supabase, but local cache update failed:', storageError);
+      }
+
+      try {
+        if (contact && contact.trim()) {
+          notifyComplaintSubmitted(contact, trackingCode, title, name);
+        }
+        const finalPriority = aiResult?.priority || assignedCategory?.default_priority || 'Medium';
+        if (finalPriority === 'High' || aiResult?.involves_minor) {
+          notifyCaptainHighPriorityAlert(
+            '0917-555-0100',
+            trackingCode,
+            title,
+            'Barangay Hibao-an Sur',
+            'High'
+          );
+        }
+      } catch (smsErr) {
+        console.warn('SMS dispatch error:', smsErr);
+      }
+      setSubmittedTracking(trackingCode);
+    } catch (reason) {
+      setSubmitError(reason instanceof Error ? reason.message : 'Could not submit the complaint.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -345,7 +352,9 @@ export default function ReportPage() {
           <div className="space-y-1">
             <h2 className="text-2xl font-bold text-slate-900">Incident Successfully Submitted!</h2>
             <p className="text-slate-500 text-xs sm:text-sm max-w-md mx-auto">
-              Your concern has been saved in the live database and registered in the Barangay Hibao-an Sur queue.
+              {savedToDatabase
+                ? 'Your concern has been saved in the live database and registered in the Barangay Hibao-an Sur queue.'
+                : 'This local demo report is saved in this browser only and is not visible to barangay staff.'}
             </p>
           </div>
 
@@ -391,6 +400,7 @@ export default function ReportPage() {
       ) : (
         /* Report Form */
         <form onSubmit={handleSubmit} className="space-y-8 bg-white rounded-3xl p-6 sm:p-8 border border-slate-200 shadow-sm">
+          {submitError && <p role="alert" className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs text-rose-700">{submitError}</p>}
           
           {/* STEP 1: Details */}
           <div className="space-y-4">

@@ -60,22 +60,20 @@ export default function Navbar() {
     user && (user.role === 'staff' || user.role === 'official' || user.role === 'admin')
   );
 
-  const navLinks = [
-    isStaffOrOfficial
-      ? { href: '/admin/dashboard', label: 'Barangay Portal', icon: LayoutDashboard }
-      : { href: '/resident/dashboard', label: 'Resident Overview', icon: Building2 },
-    ...(isStaffOrOfficial
-      ? [
-          { href: '/admin/dashboard?tab=complaints', label: 'Complaints', icon: Search },
-          { href: '/admin/dashboard?tab=certificates', label: 'Requests', icon: FileText },
-          { href: '/map', label: 'Incident Map', icon: MapPin },
-        ]
-      : [
-          { href: '/track', label: 'My Complaints', icon: Search },
-          { href: '/certificates', label: 'My Requests', icon: FileText },
-          { href: '/report', label: 'File Concern', icon: PlusCircle },
-        ]),
-  ];
+  const navLinks = isStaffOrOfficial
+    ? [
+        { href: '/admin/dashboard', label: 'Barangay Portal', icon: LayoutDashboard },
+        { href: '/admin/dashboard?tab=complaints', label: 'Complaints', icon: Search },
+        { href: '/admin/dashboard?tab=certificates', label: 'Requests', icon: FileText },
+        { href: '/map', label: 'Incident Map', icon: MapPin },
+      ]
+    : [
+        { href: '/', label: 'Community Overview', icon: Building2 },
+        { href: '/resident/dashboard', label: 'My Dashboard', icon: LayoutDashboard },
+        { href: '/track', label: 'My Complaints', icon: Search },
+        { href: '/certificates', label: 'My Requests', icon: FileText },
+        { href: '/report', label: 'File Concern', icon: PlusCircle },
+      ];
 
   return (
     <header className="sticky top-0 z-50 bg-white/95 backdrop-blur border-b border-slate-200">
@@ -133,6 +131,7 @@ export default function Navbar() {
               src="/logo.png"
               alt="CommunityVoice Logo"
               fill
+              sizes="40px"
               className="object-cover"
               priority
             />

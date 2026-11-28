@@ -7,12 +7,15 @@ import { AlertCircle, FileText, CheckCircle2, Clock, PlusCircle, Search, Bell, U
 import { useAuth } from '@/context/AuthContext';
 import { INITIAL_COMPLAINTS, INITIAL_CERTIFICATES } from '@/lib/mockData';
 import { Complaint, CertificateRequest } from '@/lib/types';
+import { isSupabaseConfigured, supabase } from '@/lib/supabase/client';
 
 export default function ResidentDashboardPage() {
   const router = useRouter();
   const { user, loading } = useAuth();
   const [complaints, setComplaints] = useState<Complaint[]>([]);
   const [requests, setRequests] = useState<CertificateRequest[]>([]);
+  const [loadError, setLoadError] = useState('');
+  const [dataLoading, setDataLoading] = useState(true);
 
   useEffect(() => {
     if (!loading && !user) router.replace('/login');
@@ -20,24 +23,61 @@ export default function ResidentDashboardPage() {
 
   useEffect(() => {
     if (!user) return;
-    try {
-      const customComplaints: Complaint[] = JSON.parse(localStorage.getItem('cv_custom_complaints') || '[]');
-      const customRequests: CertificateRequest[] = JSON.parse(localStorage.getItem('cv_custom_certificates') || '[]');
-      const allComplaints = [...customComplaints, ...INITIAL_COMPLAINTS];
-      const ownComplaints = allComplaints.filter((c) =>
-        c.resident_name?.toLowerCase() === user.full_name.toLowerCase()
-        || user.email === 'resident@hibaoan.gov.ph' && c.tracking_number === 'CV-2026-001'
-        || JSON.parse(localStorage.getItem('cv_my_tracking_numbers') || '[]').includes(c.tracking_number)
-      );
-      const ownRequests = customRequests.length
-        ? customRequests
-        : INITIAL_CERTIFICATES.filter((c) => user.email === 'resident@hibaoan.gov.ph');
-      setComplaints(ownComplaints);
-      setRequests(ownRequests);
-    } catch {
-      setComplaints(INITIAL_COMPLAINTS.slice(0, 1));
-      setRequests(INITIAL_CERTIFICATES.slice(0, 1));
+    const resident = user;
+    let active = true;
+    setDataLoading(true);
+    async function loadResidentRecords() {
+      try {
+        if (isSupabaseConfigured && supabase) {
+          const [complaintResult, requestResult] = await Promise.all([
+            supabase.from('complaints').select('*').eq('resident_id', resident.id).order('created_at', { ascending: false }),
+            supabase.from('certification_requests').select('*').eq('resident_id', resident.id).order('created_at', { ascending: false }),
+          ]);
+          if (complaintResult.error) throw complaintResult.error;
+          if (requestResult.error) throw requestResult.error;
+          if (!active) return;
+          setComplaints((complaintResult.data || []) as Complaint[]);
+          setRequests((requestResult.data || []).map((request) => ({
+            ...request,
+            resident_name: resident.full_name,
+          })) as CertificateRequest[]);
+          setLoadError('');
+          return;
+        }
+
+        if (process.env.NODE_ENV !== 'development') {
+          if (active) {
+            setComplaints([]);
+            setRequests([]);
+          }
+          return;
+        }
+
+        const customComplaints: Complaint[] = JSON.parse(localStorage.getItem('cv_custom_complaints') || '[]');
+        const customRequests: CertificateRequest[] = JSON.parse(localStorage.getItem('cv_custom_certificates') || '[]');
+        const myTrackings: string[] = JSON.parse(localStorage.getItem('cv_my_tracking_numbers') || '[]');
+        const ownComplaints = [...customComplaints, ...INITIAL_COMPLAINTS].filter((complaint) =>
+          complaint.resident_name?.toLowerCase() === resident.full_name.toLowerCase()
+          || resident.email === 'resident@hibaoan.gov.ph' && complaint.tracking_number === 'CV-2026-001'
+          || myTrackings.includes(complaint.tracking_number)
+        );
+        const ownRequests = customRequests.length
+          ? customRequests
+          : INITIAL_CERTIFICATES.filter((request) => resident.email === 'resident@hibaoan.gov.ph');
+        if (active) {
+          setComplaints(ownComplaints);
+          setRequests(ownRequests);
+        }
+      } catch (error) {
+        console.error('Could not load resident records:', error);
+        if (active) setLoadError('Could not load your records. Please refresh and try again.');
+      } finally {
+        if (active) setDataLoading(false);
+      }
     }
+
+    void loadResidentRecords();
+    return () => { active = false; };
   }, [user]);
 
   const counts = useMemo(() => ({
@@ -54,6 +94,7 @@ export default function ResidentDashboardPage() {
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
+      {loadError && <p role="alert" className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs text-rose-700">{loadError}</p>}
       <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3">
         <div>
           <p className="text-xs font-bold uppercase tracking-wider text-blue-700">Resident Overview</p>
@@ -92,7 +133,7 @@ export default function ResidentDashboardPage() {
                 <p className="text-[11px] text-slate-500 mt-1 font-mono">{c.tracking_number}</p>
               </Link>
             ))}
-            {!complaints.length && <p className="text-sm text-slate-400 py-6 text-center">No complaints submitted yet.</p>}
+            {!dataLoading && !complaints.length && <p className="text-sm text-slate-400 py-6 text-center">No complaints submitted yet.</p>}
           </div>
         </section>
 
@@ -108,7 +149,7 @@ export default function ResidentDashboardPage() {
                 <p className="text-[11px] text-slate-500 mt-1 font-mono">{r.tracking_number}</p>
               </Link>
             ))}
-            {!requests.length && <p className="text-sm text-slate-400 py-6 text-center">No document requests submitted yet.</p>}
+            {!dataLoading && !requests.length && <p className="text-sm text-slate-400 py-6 text-center">No document requests submitted yet.</p>}
           </div>
         </section>
       </div>
